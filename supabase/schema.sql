@@ -149,6 +149,32 @@ create policy "staff read settings" on public.app_settings for select to authent
 create policy "owners manage settings" on public.app_settings for all to authenticated using (exists(select 1 from public.profiles where id=auth.uid() and role='owner' and active=true)) with check (exists(select 1 from public.profiles where id=auth.uid() and role='owner' and active=true));
 create policy "staff read audit" on public.audit_log for select to authenticated using (public.is_staff());
 
+-- Referencias de clientes: bucket privado, acceso exclusivo del equipo.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'request-attachments',
+  'request-attachments',
+  false,
+  26214400,
+  array['image/png','image/jpeg','image/webp','image/svg+xml','application/pdf','model/stl','model/3mf','application/octet-stream']
+)
+on conflict (id) do update set public = false, file_size_limit = 26214400;
+
+create policy "staff read request files" on storage.objects
+for select to authenticated using (bucket_id = 'request-attachments' and public.is_staff());
+create policy "managers upload request files" on storage.objects
+for insert to authenticated with check (bucket_id = 'request-attachments' and public.is_manager());
+create policy "managers update request files" on storage.objects
+for update to authenticated using (bucket_id = 'request-attachments' and public.is_manager())
+with check (bucket_id = 'request-attachments' and public.is_manager());
+create policy "managers delete request files" on storage.objects
+for delete to authenticated using (bucket_id = 'request-attachments' and public.is_manager());
+
+revoke all on function public.is_staff() from public;
+revoke all on function public.is_manager() from public;
+grant execute on function public.is_staff() to authenticated;
+grant execute on function public.is_manager() to authenticated;
+
 insert into public.catalog_items(id,name,category,min_quantity,active,featured,sort_order) values
 ('llaveros','Llaveros personalizados','Tu marca',10,true,true,10),
 ('porta-qr','Porta QR','Negocios',1,true,true,20),
