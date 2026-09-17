@@ -2,6 +2,12 @@
 
 Panel privado y separado de la web pública de ATRY LAB.
 
+## Panel publicado
+
+GitHub Pages publica la carpeta `docs` de la rama `main`. Antes de subir cambios,
+`npm run build` regenera esa carpeta. La interfaz es pública, pero los datos y
+las operaciones permanecen protegidos por Supabase Auth y las políticas RLS.
+
 ## Desarrollo local
 
 1. Instalar dependencias con `npm install`.
