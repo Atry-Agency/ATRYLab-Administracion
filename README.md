@@ -17,7 +17,7 @@ Sin variables de entorno, el panel abre automáticamente una vista de demostraci
 2. Ejecutar `supabase/schema.sql` desde SQL Editor.
 3. Crear el primer usuario desde Authentication.
 4. Copiar el UUID del usuario y ejecutar la instrucción comentada al final de `schema.sql` para asignarle el rol `owner`.
-5. Crear un bucket privado llamado `request-attachments` antes de habilitar adjuntos.
+5. El esquema crea automáticamente el bucket privado `request-attachments` y sus políticas de acceso.
 
 ## Seguridad
 

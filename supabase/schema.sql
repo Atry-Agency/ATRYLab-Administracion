@@ -175,6 +175,21 @@ revoke all on function public.is_manager() from public;
 grant execute on function public.is_staff() to authenticated;
 grant execute on function public.is_manager() to authenticated;
 
+-- Permisos SQL mínimos. RLS sigue decidiendo qué filas puede leer o modificar cada rol.
+grant usage on schema public to authenticated;
+grant select on public.profiles, public.customers, public.requests,
+  public.request_attachments, public.status_history, public.catalog_items,
+  public.production_jobs, public.app_settings, public.audit_log to authenticated;
+grant insert, update, delete on public.customers, public.requests,
+  public.request_attachments, public.catalog_items, public.production_jobs to authenticated;
+grant insert on public.status_history to authenticated;
+grant insert, update, delete on public.app_settings to authenticated;
+grant usage, select on sequence public.status_history_id_seq to authenticated;
+
+-- La web pública no obtiene acceso directo a las tablas administrativas.
+revoke all on all tables in schema public from anon;
+revoke all on all sequences in schema public from anon;
+
 insert into public.catalog_items(id,name,category,min_quantity,active,featured,sort_order) values
 ('llaveros','Llaveros personalizados','Tu marca',10,true,true,10),
 ('porta-qr','Porta QR','Negocios',1,true,true,20),
