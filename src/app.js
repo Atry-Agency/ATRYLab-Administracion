@@ -23,6 +23,13 @@ const checked = value => value ? "checked" : "";
 const setting = key => state.settings[key]?.value || {};
 const statusPill = id => { const meta = statusMeta[id] || {label:id, tone:"gray"}; return `<span class="status ${meta.tone}"><i></i>${esc(meta.label)}</span>`; };
 const emptyState = (icon, title, copy) => `<div class="empty"><i class="ph ${icon}"></i><h3>${title}</h3><p>${copy}</p></div>`;
+const publicationMeta = {
+  published:{label:"Publicado", icon:"ph-check-circle", tone:"published"},
+  upcoming:{label:"Próximamente", icon:"ph-clock-countdown", tone:"upcoming"},
+  draft:{label:"Borrador", icon:"ph-pencil-simple", tone:"draft"}
+};
+const publicationState = item => item.publication_status || (item.active ? "published" : "draft");
+const catalogImageUrl = path => path ? supabase.storage.from("catalog-images").getPublicUrl(path).data.publicUrl : "";
 
 async function bootstrap(){
   if(state.demo){ state.requests = [...demoRequests]; state.catalog = [...demoCatalog]; state.loading = false; render(); return; }
@@ -106,7 +113,15 @@ function productionView(){
 }
 
 function catalogView(){
-  return `<section class="section-head"><div><h2>Catálogo</h2><p>Productos, mínimos, visibilidad y reglas comerciales.</p></div><button class="primary" data-action="new-product"><i class="ph ph-plus"></i>Nuevo producto</button></section><section class="catalog-admin">${state.catalog.length ? state.catalog.map(item => `<article><span class="catalog-icon"><i class="ph ${esc(item.settings?.icon || "ph-cube")}"></i></span><div><small>${esc(item.category)}</small><h3>${esc(item.name)}</h3><p>${esc(item.description || "Sin descripción interna")}</p><p>Pedido mínimo: <b>${item.min_quantity} ${item.min_quantity === 1 ? "unidad" : "unidades"}</b></p></div><span class="visibility ${item.active ? "on" : ""}"><i></i>${item.active ? "Visible" : "Oculto"}</span><button class="icon-btn" data-edit-product="${esc(item.id)}" title="Editar producto"><i class="ph ph-pencil-simple"></i></button></article>`).join("") : emptyState("ph-cube", "Catálogo vacío", "Creá el primer producto para definir sus reglas.")}</section>`;
+  const counts = Object.fromEntries(Object.keys(publicationMeta).map(status => [status, state.catalog.filter(item => publicationState(item) === status).length]));
+  return `<section class="section-head"><div><h2>Catálogo</h2><p>Decidí qué está listo, qué querés anticipar y qué todavía queda guardado.</p></div><button class="primary" data-action="new-product"><i class="ph ph-plus"></i>Nuevo producto</button></section>
+  <section class="catalog-summary">${Object.entries(publicationMeta).map(([id,meta]) => `<article class="${meta.tone}"><i class="ph ${meta.icon}"></i><span><strong>${counts[id]}</strong><small>${meta.label}</small></span></article>`).join("")}</section>
+  <section class="catalog-admin editorial">${state.catalog.length ? state.catalog.map(item => { const status = publicationState(item); const meta = publicationMeta[status]; const image = catalogImageUrl(item.image_path); return `<article>
+    <div class="catalog-thumb ${image ? "has-image" : ""}">${image ? `<img src="${esc(image)}" alt="">` : `<img src="${logo}" alt=""><small>Imagen pendiente</small>`}</div>
+    <div class="catalog-copy"><small>${esc(item.category)}</small><h3>${esc(item.name)}</h3><p>${esc(item.description || "Sin descripción pública")}</p><p>Pedido mínimo: <b>${item.min_quantity} ${item.min_quantity === 1 ? "unidad" : "unidades"}</b></p></div>
+    <span class="publication ${meta.tone}"><i class="ph ${meta.icon}"></i>${meta.label}</span>
+    <button class="icon-btn" data-edit-product="${esc(item.id)}" title="Editar producto"><i class="ph ph-pencil-simple"></i></button>
+  </article>`; }).join("") : emptyState("ph-cube", "Catálogo vacío", "Creá el primer producto para definir sus reglas.")}</section>`;
 }
 
 function customerStats(customer){
@@ -162,11 +177,30 @@ async function uploadReferences(requestId, files){
 }
 
 function productModal(item=null){
-  openModal({title:item ? "Editar producto" : "Nuevo producto", eyebrow:"CATÁLOGO", description:"Definí cómo se presenta y qué reglas mínimas debe respetar.", content:`<div class="form-grid">${field("Nombre *", "name", item?.name, "required")}${field("Identificador *", "id", item?.id, `${item ? "readonly" : "required"} pattern="[a-z0-9-]+" placeholder="porta-qr"`)}${select("Categoría", "category", [["Tu marca","Tu marca"],["Negocios","Negocios"],["Eventos","Eventos"],["Hogar","Hogar"],["Figuras","Figuras"],["A medida","A medida"]], item?.category || "A medida")}${field("Pedido mínimo", "min_quantity", item?.min_quantity || 1, 'type="number" min="1" required')}${field("Orden", "sort_order", item?.sort_order || 0, 'type="number" min="0"')}${field("Icono Phosphor", "icon", item?.settings?.icon || "ph-cube", 'placeholder="ph-cube"')}${textarea("Descripción interna", "description", item?.description, "Qué es, para quién sirve y cualquier regla importante")}<label class="check-field"><input type="checkbox" name="active" ${checked(item ? item.active : true)}><span>Visible en el catálogo</span></label><label class="check-field"><input type="checkbox" name="featured" ${checked(item?.featured)}><span>Producto destacado</span></label></div>`, submitLabel:item ? "Actualizar producto" : "Crear producto", onSubmit:async data => {
-    const payload = {id:data.get("id"), name:data.get("name"), category:data.get("category"), description:data.get("description") || null, min_quantity:Number(data.get("min_quantity")), sort_order:Number(data.get("sort_order") || 0), active:data.has("active"), featured:data.has("featured"), settings:{...(item?.settings || {}), icon:data.get("icon") || "ph-cube"}, updated_at:new Date().toISOString()};
+  const currentStatus = item ? publicationState(item) : "draft"; const image = catalogImageUrl(item?.image_path);
+  openModal({title:item ? "Editar producto" : "Nuevo producto", eyebrow:"CATÁLOGO", description:"Publicalo cuando esté completo, anticipalo como Próximamente o guardalo como borrador.", wide:true, content:`<div class="product-editor">
+    <section class="product-editor-image"><div class="editor-preview ${image ? "has-image" : ""}" id="product-image-preview">${image ? `<img src="${esc(image)}" alt="">` : `<img src="${logo}" alt="ATRY"><span>Imagen pendiente</span>`}</div><label class="file-field compact">Imagen del producto<input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/avif"><small>JPG, PNG, WebP o AVIF · máximo 5 MB</small></label>${item?.image_path ? `<label class="check-field"><input type="checkbox" name="remove_image"><span>Quitar imagen actual</span></label>` : ""}</section>
+    <div class="form-grid">${field("Nombre *", "name", item?.name, "required")}${field("Identificador *", "id", item?.id, `${item ? "readonly" : "required"} pattern="[a-z0-9-]+" placeholder="porta-qr"`)}${select("Categoría", "category", [["Tu marca","Tu marca"],["Personalizados","Personalizados"],["Negocios","Negocios"],["Eventos","Eventos"],["Hogar","Hogar"],["Casa","Casa"],["Figuras","Figuras"],["A medida","A medida"],["Trofeos & premios","Trofeos & premios"],["Prototipos & piezas","Prototipos & piezas"]], item?.category || "A medida")}${select("Estado de publicación", "publication_status", [["draft","Borrador · no aparece en la web"],["upcoming","Próximamente · aparece con aviso"],["published","Publicado · disponible normalmente"]], currentStatus)}${field("Pedido mínimo", "min_quantity", item?.min_quantity || 1, 'type="number" min="1" required')}${field("Orden", "sort_order", item?.sort_order || 0, 'type="number" min="0"')}${field("Icono Phosphor", "icon", item?.settings?.icon || "ph-cube", 'placeholder="ph-cube"')}${field("Etiqueta opcional", "badge", item?.badge || "", 'placeholder="Ej. Nuevo · Edición limitada"')}${field("Texto alternativo de imagen", "image_alt", item?.image_alt || item?.name || "", 'placeholder="Describe brevemente la foto"')}${textarea("Descripción para la web", "description", item?.description, "Qué es y por qué puede interesarle a alguien")}<label class="check-field"><input type="checkbox" name="featured" ${checked(item?.featured)}><span>Mostrar entre los destacados</span></label></div>
+  </div>`, submitLabel:item ? "Guardar producto" : "Crear producto", onSubmit:async data => {
+    const id = data.get("id"); const publication = data.get("publication_status"); let imagePath = data.has("remove_image") ? null : (item?.image_path || null); const file = data.get("image");
+    if(file instanceof File && file.size){ imagePath = await uploadCatalogImage(id, file); }
+    const payload = {id, name:data.get("name"), category:data.get("category"), description:data.get("description") || null, min_quantity:Number(data.get("min_quantity")), sort_order:Number(data.get("sort_order") || 0), active:publication !== "draft", publication_status:publication, featured:data.has("featured"), image_path:imagePath, image_alt:data.get("image_alt") || data.get("name"), badge:data.get("badge") || (publication === "upcoming" ? "Próximamente" : null), settings:{...(item?.settings || {}), icon:data.get("icon") || "ph-cube"}, updated_at:new Date().toISOString()};
     const query = item ? supabase.from("catalog_items").update(payload).eq("id", item.id) : supabase.from("catalog_items").insert(payload); const {error} = await query; if(error) throw error;
     closeModal(); await loadData(); toast(item ? "Producto actualizado" : "Producto creado");
-  }});
+  }}); bindProductImagePreview();
+}
+
+function bindProductImagePreview(){
+  const input = document.querySelector('input[name="image"]'); const preview = document.querySelector("#product-image-preview"); if(!input || !preview) return;
+  input.addEventListener("change", () => { const file = input.files?.[0]; if(!file) return; if(file.size > 5 * 1024 * 1024){ input.value=""; toast("La imagen supera los 5 MB", "error"); return; } const url = URL.createObjectURL(file); preview.classList.add("has-image"); preview.innerHTML = `<img src="${url}" alt="Vista previa">`; });
+}
+
+async function uploadCatalogImage(productId, file){
+  if(file.size > 5 * 1024 * 1024) throw new Error("La imagen supera los 5 MB.");
+  const extension = (file.name.split(".").pop() || "webp").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const path = `productos/${productId}/${Date.now()}.${extension}`;
+  const {error} = await supabase.storage.from("catalog-images").upload(path, file, {contentType:file.type || "image/webp", cacheControl:"31536000", upsert:false});
+  if(error) throw error; return path;
 }
 
 function customerModal(customer=null){
