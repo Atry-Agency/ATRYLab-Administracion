@@ -146,14 +146,17 @@ function settingsView(){
 }
 
 function openModal({title, eyebrow="ATRY LAB", description="", content, submitLabel="Guardar cambios", onSubmit, wide=false, modalClass=""}){
-  closeModal(); const root = document.querySelector("#modal-root");
+  closeModal(); const root = document.querySelector("#modal-root"); const pageScroll = window.scrollY;
+  document.body.dataset.modalScroll = String(pageScroll); document.body.style.top = `-${pageScroll}px`; document.body.classList.add("modal-open");
   root.innerHTML = `<div class="modal-backdrop"><section class="form-modal ${wide ? "wide" : ""} ${esc(modalClass)}" role="dialog" aria-modal="true"><header><div><small>${esc(eyebrow)}</small><h2>${esc(title)}</h2>${description ? `<p>${esc(description)}</p>` : ""}</div><button type="button" class="icon-btn modal-close" aria-label="Cerrar"><i class="ph ph-x"></i></button></header><form><div class="form-body">${content}</div><footer><button type="button" class="secondary modal-cancel">Cancelar</button><button type="submit" class="primary">${esc(submitLabel)} <i class="ph ph-check"></i></button></footer></form></section></div>`;
   root.querySelector(".modal-close").onclick = closeModal; root.querySelector(".modal-cancel").onclick = closeModal;
   root.querySelector(".modal-backdrop").onclick = event => { if(event.target.classList.contains("modal-backdrop")) closeModal(); };
   root.querySelector("form").onsubmit = async event => { event.preventDefault(); const button = event.currentTarget.querySelector('[type="submit"]'); button.disabled = true; const original = button.innerHTML; button.innerHTML = 'Guardando <i class="ph ph-circle-notch spin"></i>'; try { await onSubmit(new FormData(event.currentTarget), event.currentTarget); } catch(error){ toast(error.message || "No se pudo guardar", "error"); button.disabled = false; button.innerHTML = original; } };
-  setTimeout(() => root.querySelector("input,select,textarea")?.focus(), 20);
+  const modalBody = root.querySelector(".form-body"); if(modalBody) modalBody.scrollTop = 0;
+  if(modalClass.includes("product-modal")) setTimeout(() => root.querySelector(".modal-close")?.focus({preventScroll:true}), 20);
+  else setTimeout(() => root.querySelector("input:not([type='hidden']),select,textarea")?.focus({preventScroll:true}), 20);
 }
-function closeModal(){ const root = document.querySelector("#modal-root"); if(root) root.innerHTML = ""; }
+function closeModal(){ const root = document.querySelector("#modal-root"); if(root) root.innerHTML = ""; if(document.body.classList.contains("modal-open")){ const pageScroll=Number(document.body.dataset.modalScroll||0); document.body.classList.remove("modal-open"); document.body.style.top=""; delete document.body.dataset.modalScroll; window.scrollTo(0,pageScroll); } }
 const field = (label, name, value="", options="") => `<label>${label}<input name="${name}" value="${esc(value)}" ${options}></label>`;
 const textarea = (label, name, value="", placeholder="") => `<label class="span-2">${label}<textarea name="${name}" placeholder="${esc(placeholder)}">${esc(value)}</textarea></label>`;
 const select = (label, name, options, value="", extra="") => `<label>${label}<select name="${name}" ${extra}>${options.map(([id,text]) => `<option value="${esc(id)}" ${String(id) === String(value) ? "selected" : ""}>${esc(text)}</option>`).join("")}</select></label>`;
