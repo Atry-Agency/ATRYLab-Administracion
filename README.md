@@ -2,6 +2,15 @@
 
 Panel privado y separado de la web pública de ATRY LAB.
 
+## Funciones actuales
+
+- Solicitudes manuales con cliente, cantidades, plazos, cotización, seña, notas y referencias privadas.
+- Seguimiento por estados e historial de cambios.
+- Clientes con datos de contacto e historial comercial.
+- Fichas de producción con material, color, peso, tiempo, máquina y reimpresiones.
+- Catálogo administrable con mínimos, orden, visibilidad y destacados.
+- Configuración de canales de contacto y datos del taller.
+
 ## Panel publicado
 
 GitHub Pages publica la carpeta `docs` de la rama `main`. Antes de subir cambios,
