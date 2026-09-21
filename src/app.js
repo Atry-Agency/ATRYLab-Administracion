@@ -6,7 +6,7 @@ const asset = path => `${import.meta.env.BASE_URL || "/"}${path.replace(/^\//, "
 const logo = asset("recursos/atry-isotipo.png");
 const state = {
   page: "dashboard", requests: [], catalog: [], customers: [], jobs: [], attachments: [], settings: {}, profiles: [],
-  selected: null, query: "", status: "all", loading: true, demo: !isSupabaseConfigured,
+  selected: null, query: "", status: "all", catalogQuery: "", catalogStatus: "all", loading: true, demo: !isSupabaseConfigured,
   user: null, sidebarOpen: false
 };
 
@@ -29,6 +29,13 @@ const publicationMeta = {
   draft:{label:"Borrador", icon:"ph-pencil-simple", tone:"draft"}
 };
 const publicationState = item => item.publication_status || (item.active ? "published" : "draft");
+const iconOptions = [
+  ["ph-key","Llavero"],["ph-qr-code","Código QR"],["ph-trophy","Trofeo"],["ph-gift","Regalo"],
+  ["ph-flower","Decoración"],["ph-paw-print","Mascota"],["ph-cube","Pieza 3D"],["ph-house","Hogar"],
+  ["ph-storefront","Negocio"],["ph-confetti","Evento"],["ph-shapes","Figura"],["ph-ruler","A medida"]
+];
+const badgeOptions = [["","Sin etiqueta"],["Nuevo","Nuevo"],["Popular","Popular"],["Recomendado","Recomendado"],["Edición limitada","Edición limitada"],["Para regalar","Para regalar"],["Empresas","Empresas"]];
+const slugify = value => String(value || "producto").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"") || "producto";
 const catalogImageUrl = path => path ? supabase.storage.from("catalog-images").getPublicUrl(path).data.publicUrl : "";
 const imageFrame = item => ({
   x: Math.min(100, Math.max(0, Number(item?.settings?.image_position_x ?? 50))),
@@ -85,7 +92,7 @@ async function signIn(event){
 function shell(content){
   const title = pageNames[state.page] || "Panel";
   return `<div class="app-shell ${state.sidebarOpen ? "menu-open" : ""}">
-    <aside class="sidebar"><button class="brand brand-panel" data-page="dashboard"><span><img src="${logo}" alt="ATRY"></span><span>ATRY <b>LAB</b><small>ADMIN</small></span></button><nav>${nav.map(([id, icon, label]) => `<button data-page="${id}" class="${state.page === id ? "active" : ""}"><i class="ph ${icon}"></i><span>${label}</span>${id === "requests" ? `<b>${state.requests.filter(r => r.status === "new").length}</b>` : ""}</button>`).join("")}</nav><div class="sidebar-foot"><span class="avatar">${esc((state.profiles.find(p => p.id === state.user?.id)?.full_name || "ATRY").slice(0,1))}</span><div><strong>${esc(state.profiles.find(p => p.id === state.user?.id)?.full_name || "Equipo ATRY")}</strong><small>${state.demo ? "Vista de demostración" : esc(state.user?.email)}</small></div><button data-logout title="Cerrar sesión"><i class="ph ph-sign-out"></i></button></div></aside>
+    <aside class="sidebar"><button class="brand brand-panel" data-page="dashboard"><span><img src="${logo}" alt="ATRY"></span><span>ATRY <b>LAB</b><small>ADMIN</small></span></button><nav>${nav.map(([id, icon, label]) => `<button data-page="${id}" class="${state.page === id ? "active" : ""}"><i class="ph ${icon}"></i><span>${label}</span>${id === "requests" ? `<b>${state.requests.filter(r => r.status === "new").length}</b>` : ""}</button>`).join("")}</nav><div class="sidebar-foot"><span class="avatar brand-avatar"><img src="${logo}" alt="ATRY"></span><div><strong>${esc(state.profiles.find(p => p.id === state.user?.id)?.full_name || "Administrador ATRY")}</strong><small>${state.demo ? "Vista de demostración" : esc(state.user?.email)}</small></div><button data-logout title="Cerrar sesión"><i class="ph ph-sign-out"></i></button></div></aside>
     <main class="main"><header><button class="menu-toggle" id="menu-toggle"><i class="ph ph-list"></i></button><div><small>ATRY LAB / OPERACIONES</small><h1>${title}</h1></div><div class="top-actions"><button class="search-trigger" id="global-search"><i class="ph ph-magnifying-glass"></i><span>Buscar</span><kbd>⌘ K</kbd></button><span class="live"><i></i>${state.demo ? "Demo" : "En línea"}</span><button class="header-logout" data-logout title="Cerrar sesión" aria-label="Cerrar sesión"><i class="ph ph-sign-out"></i><span>Salir</span></button></div></header>${state.demo ? `<div class="demo-banner"><i class="ph ph-flask"></i><span><strong>Vista de demostración</strong> — los cambios se muestran en pantalla y no se guardan.</span></div>` : ""}<div class="content">${content}</div></main>
     <div class="drawer-backdrop"></div><div id="modal-root"></div><div id="toast-root"></div>
   </div>`;
@@ -122,14 +129,17 @@ function productionView(){
 
 function catalogView(){
   const counts = Object.fromEntries(Object.keys(publicationMeta).map(status => [status, state.catalog.filter(item => publicationState(item) === status).length]));
+  const term = state.catalogQuery.trim().toLowerCase();
+  const filtered = state.catalog.filter(item => (state.catalogStatus === "all" || publicationState(item) === state.catalogStatus) && `${item.name} ${item.category} ${item.badge || ""} ${item.description || ""}`.toLowerCase().includes(term));
   return `<section class="section-head"><div><h2>Catálogo</h2><p>Decidí qué está listo, qué querés anticipar y qué todavía queda guardado.</p></div><button class="primary" data-action="new-product"><i class="ph ph-plus"></i>Nuevo producto</button></section>
-  <section class="catalog-summary">${Object.entries(publicationMeta).map(([id,meta]) => `<article class="${meta.tone}"><i class="ph ${meta.icon}"></i><span><strong>${counts[id]}</strong><small>${meta.label}</small></span></article>`).join("")}</section>
-  <section class="catalog-admin editorial">${state.catalog.length ? state.catalog.map(item => { const status = publicationState(item); const meta = publicationMeta[status]; const image = catalogImageUrl(item.image_path); return `<article>
+  <section class="catalog-summary"><button data-catalog-status="all" class="all ${state.catalogStatus === "all" ? "active" : ""}"><i class="ph ph-squares-four"></i><span><strong>${state.catalog.length}</strong><small>Todos</small></span></button>${Object.entries(publicationMeta).map(([id,meta]) => `<button data-catalog-status="${id}" class="${meta.tone} ${state.catalogStatus === id ? "active" : ""}"><i class="ph ${meta.icon}"></i><span><strong>${counts[id]}</strong><small>${meta.label}</small></span></button>`).join("")}</section>
+  <section class="catalog-search"><label><i class="ph ph-magnifying-glass"></i><input id="catalog-search" value="${esc(state.catalogQuery)}" placeholder="Buscar por nombre, categoría o etiqueta"></label>${state.catalogQuery || state.catalogStatus !== "all" ? `<button data-catalog-reset><i class="ph ph-x"></i> Limpiar</button>` : ""}<span>${filtered.length} ${filtered.length === 1 ? "producto" : "productos"}</span></section>
+  <section class="catalog-admin editorial">${filtered.length ? filtered.map(item => { const status = publicationState(item); const meta = publicationMeta[status]; const image = catalogImageUrl(item.image_path); return `<article>
     <div class="catalog-thumb ${image ? "has-image" : ""}">${image ? `<img src="${esc(image)}" alt="" style="${imageFrameStyle(item)}">` : `<img src="${logo}" alt=""><small>Imagen pendiente</small>`}</div>
-    <div class="catalog-copy"><small>${esc(item.category)}</small><h3>${esc(item.name)}</h3><p>${esc(item.description || "Sin descripción pública")}</p><p>Pedido mínimo: <b>${item.min_quantity} ${item.min_quantity === 1 ? "unidad" : "unidades"}</b></p></div>
+    <div class="catalog-copy"><small>${esc(item.category)}${item.badge ? ` · ${esc(item.badge)}` : ""}</small><h3>${esc(item.name)}</h3><p>${esc(item.description || "Sin descripción pública")}</p><p>Pedido mínimo: <b>${item.min_quantity} ${item.min_quantity === 1 ? "unidad" : "unidades"}</b></p></div>
     <span class="publication ${meta.tone}"><i class="ph ${meta.icon}"></i>${meta.label}</span>
     <button class="icon-btn" data-edit-product="${esc(item.id)}" title="Editar producto"><i class="ph ph-pencil-simple"></i></button>
-  </article>`; }).join("") : emptyState("ph-cube", "Catálogo vacío", "Creá el primer producto para definir sus reglas.")}</section>`;
+  </article>`; }).join("") : emptyState("ph-magnifying-glass", "No encontramos productos", "Probá con otra búsqueda o limpiá los filtros.")}</section>`;
 }
 
 function customerStats(customer){
@@ -189,6 +199,8 @@ async function uploadReferences(requestId, files){
 
 function productModal(item=null){
   const currentStatus = item ? publicationState(item) : "draft"; const image = catalogImageUrl(item?.image_path); const frame = imageFrame(item);
+  const currentIcon = item?.settings?.icon || "ph-cube";
+  const nextOrder = state.catalog.length ? Math.max(...state.catalog.map(entry => Number(entry.sort_order || 0))) + 10 : 10;
   openModal({title:item ? "Editar producto" : "Nuevo producto", eyebrow:"CATÁLOGO", description:"Completá la información y ajustá la imagen exactamente como querés que aparezca en el catálogo.", wide:true, modalClass:"product-modal", content:`<div class="product-editor">
     <section class="product-editor-image">
       <div class="preview-caption"><div><span>ENCUADRE DEL CATÁLOGO</span><small>Arrastrá la imagen para acomodarla</small></div><div class="preview-device" aria-label="Formato de vista previa"><button type="button" class="active" data-preview-ratio="desktop"><i class="ph ph-desktop"></i> PC</button><button type="button" data-preview-ratio="mobile"><i class="ph ph-device-mobile"></i> Celular</button></div></div>
@@ -199,14 +211,25 @@ function productModal(item=null){
       <p class="preview-help"><i class="ph ph-info"></i><span>El marco muestra el recorte exacto de la tarjeta. Al abrir el producto, la foto se verá completa.</span></p>
       <label class="file-field compact image-upload"><input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/avif"><span class="upload-icon"><i class="ph ph-image-square"></i></span><span><strong>${image ? "Cambiar imagen" : "Subir imagen"}</strong><small>JPG, PNG, WebP o AVIF · máximo 5 MB</small></span><i class="ph ph-upload-simple"></i></label>${item?.image_path ? `<label class="check-field remove-image"><input type="checkbox" name="remove_image"><span>Quitar imagen actual</span></label>` : ""}
     </section>
-    <div class="form-grid">${field("Nombre *", "name", item?.name, "required")}${field("Identificador *", "id", item?.id, `${item ? "readonly" : "required"} pattern="[a-z0-9-]+" placeholder="porta-qr"`)}${select("Categoría", "category", [["Tu marca","Tu marca"],["Personalizados","Personalizados"],["Negocios","Negocios"],["Eventos","Eventos"],["Hogar","Hogar"],["Casa","Casa"],["Figuras","Figuras"],["A medida","A medida"],["Trofeos & premios","Trofeos & premios"],["Prototipos & piezas","Prototipos & piezas"]], item?.category || "A medida")}${select("Estado de publicación", "publication_status", [["draft","Borrador · no aparece en la web"],["upcoming","Próximamente · aparece con aviso"],["published","Publicado · disponible normalmente"]], currentStatus)}${field("Pedido mínimo", "min_quantity", item?.min_quantity || 1, 'type="number" min="1" required')}${field("Orden", "sort_order", item?.sort_order || 0, 'type="number" min="0"')}${field("Icono Phosphor", "icon", item?.settings?.icon || "ph-cube", 'placeholder="ph-cube"')}${field("Etiqueta opcional", "badge", item?.badge || "", 'placeholder="Ej. Nuevo · Edición limitada"')}${field("Texto alternativo de imagen", "image_alt", item?.image_alt || item?.name || "", 'placeholder="Describe brevemente la foto"')}${textarea("Descripción para la web", "description", item?.description, "Qué es y por qué puede interesarle a alguien")}<label class="check-field"><input type="checkbox" name="featured" ${checked(item?.featured)}><span>Mostrar entre los destacados</span></label></div>
+    <div class="form-grid product-fields">${field("Nombre del producto *", "name", item?.name, 'required placeholder="Ej. Llaveros personalizados"')}${select("Categoría", "category", [["Tu marca","Tu marca"],["Personalizados","Personalizados"],["Negocios","Negocios"],["Eventos","Eventos"],["Hogar","Hogar"],["Casa","Casa"],["Figuras","Figuras"],["A medida","A medida"],["Trofeos & premios","Trofeos & premios"],["Prototipos & piezas","Prototipos & piezas"]], item?.category || "A medida")}${select("Disponibilidad", "publication_status", [["draft","Borrador · solo lo ves vos"],["upcoming","Próximamente · visible con aviso"],["published","Publicado · disponible para pedir"]], currentStatus)}${field("Pedido mínimo", "min_quantity", item?.min_quantity || 1, 'type="number" min="1" required')}${select("Etiqueta", "badge", badgeOptions, item?.badge || "")}${field("Texto alternativo de la foto", "image_alt", item?.image_alt || item?.name || "", 'placeholder="Ej. Llavero celeste y blanco"')}<fieldset class="icon-picker span-2"><legend>Icono del producto</legend><p>Elegí el que mejor representa el artículo.</p><div>${iconOptions.map(([icon,label]) => `<button type="button" data-product-icon="${icon}" class="${currentIcon === icon ? "active" : ""}" title="${label}"><i class="ph ${icon}"></i><span>${label}</span></button>`).join("")}</div><input type="hidden" name="icon" value="${currentIcon}"></fieldset>${textarea("Descripción para la web", "description", item?.description, "Contá qué es y para qué sirve en una frase clara")}<label class="check-field span-2 featured-choice"><input type="checkbox" name="featured" ${checked(item?.featured)}><span><strong>Mostrar entre los destacados</strong><small>Aparecerá también en las selecciones principales del catálogo.</small></span></label><input type="hidden" name="sort_order" value="${item?.sort_order ?? nextOrder}"></div>
   </div>`, submitLabel:item ? "Guardar producto" : "Crear producto", onSubmit:async data => {
-    const id = data.get("id"); const publication = data.get("publication_status"); let imagePath = data.has("remove_image") ? null : (item?.image_path || null); const file = data.get("image");
+    const baseId = slugify(data.get("name")); const id = item?.id || `${baseId}-${Date.now().toString().slice(-5)}`; const publication = data.get("publication_status"); let imagePath = data.has("remove_image") ? null : (item?.image_path || null); const file = data.get("image");
     if(file instanceof File && file.size){ imagePath = await uploadCatalogImage(id, file); }
     const payload = {id, name:data.get("name"), category:data.get("category"), description:data.get("description") || null, min_quantity:Number(data.get("min_quantity")), sort_order:Number(data.get("sort_order") || 0), active:publication !== "draft", publication_status:publication, featured:data.has("featured"), image_path:imagePath, image_alt:data.get("image_alt") || data.get("name"), badge:data.get("badge") || (publication === "upcoming" ? "Próximamente" : null), settings:{...(item?.settings || {}), icon:data.get("icon") || "ph-cube", image_position_x:Number(data.get("image_position_x") || 50), image_position_y:Number(data.get("image_position_y") || 50), image_zoom:Number(data.get("image_zoom") || 1), image_fit:data.get("image_fit") === "contain" ? "contain" : "cover", image_background:data.get("image_background") || "#d9dcdf"}, updated_at:new Date().toISOString()};
     const query = item ? supabase.from("catalog_items").update(payload).eq("id", item.id) : supabase.from("catalog_items").insert(payload); const {error} = await query; if(error) throw error;
     closeModal(); await loadData(); toast(item ? "Producto actualizado" : "Producto creado");
   }}); bindProductImagePreview();
+  bindProductChoices();
+  if(item){ const footer=document.querySelector(".product-modal footer"); footer?.insertAdjacentHTML("afterbegin",`<button type="button" class="danger product-delete"><i class="ph ph-trash"></i>Eliminar producto</button><span class="footer-spacer"></span>`); document.querySelector(".product-delete")?.addEventListener("click",()=>confirmProductDelete(item)); }
+}
+
+function bindProductChoices(){
+  const iconInput=document.querySelector('input[name="icon"]');
+  document.querySelectorAll("[data-product-icon]").forEach(button => button.addEventListener("click",()=>{ if(!iconInput)return; iconInput.value=button.dataset.productIcon; document.querySelectorAll("[data-product-icon]").forEach(entry=>entry.classList.toggle("active",entry===button)); }));
+}
+
+function confirmProductDelete(item){
+  openModal({title:"¿Eliminar este producto?",eyebrow:"ACCIÓN PERMANENTE",description:"Esta acción no se puede deshacer.",modalClass:"delete-modal",submitLabel:"Sí, eliminar",content:`<div class="delete-warning"><i class="ph ph-trash"></i><div><strong>${esc(item.name)}</strong><p>Se quitará del panel y dejará de aparecer inmediatamente en el catálogo público.</p></div></div>`,onSubmit:async()=>{ if(state.demo){closeModal();toast("En la demostración no se eliminan productos");return;} const {error}=await supabase.from("catalog_items").delete().eq("id",item.id); if(error)throw error; if(item.image_path) await supabase.storage.from("catalog-images").remove([item.image_path]); closeModal(); await loadData(); toast("Producto eliminado"); }});
 }
 
 function bindProductImagePreview(){
@@ -286,10 +309,13 @@ function bindGlobal(){
   document.querySelectorAll("[data-page]").forEach(button => button.onclick = () => { state.page = button.dataset.page; state.sidebarOpen = false; render(); });
   document.querySelectorAll("[data-request]").forEach(button => button.onclick = () => detailDrawer(button.dataset.request));
   document.querySelectorAll("[data-status]").forEach(button => button.onclick = () => { state.status = button.dataset.status; render(); });
+  document.querySelectorAll("[data-catalog-status]").forEach(button => button.onclick = () => { state.catalogStatus = button.dataset.catalogStatus; render(); });
+  document.querySelector("[data-catalog-reset]")?.addEventListener("click", () => { state.catalogStatus="all"; state.catalogQuery=""; render(); });
   document.querySelectorAll("[data-action]").forEach(button => button.onclick = () => handleAction(button.dataset.action));
   document.querySelectorAll("[data-edit-product]").forEach(button => button.onclick = () => productModal(state.catalog.find(item => item.id === button.dataset.editProduct)));
   document.querySelectorAll("[data-edit-customer]").forEach(button => button.onclick = () => customerModal(state.customers.find(item => item.id === button.dataset.editCustomer)));
   document.querySelector("#request-search")?.addEventListener("input", event => { state.query = event.target.value; const pos = event.target.selectionStart; render(); const input = document.querySelector("#request-search"); input?.focus(); input?.setSelectionRange(pos, pos); });
+  document.querySelector("#catalog-search")?.addEventListener("input", event => { state.catalogQuery = event.target.value; const pos = event.target.selectionStart; render(); const input = document.querySelector("#catalog-search"); input?.focus(); input?.setSelectionRange(pos, pos); });
   document.querySelector("#menu-toggle")?.addEventListener("click", () => { state.sidebarOpen = !state.sidebarOpen; document.querySelector(".app-shell").classList.toggle("menu-open", state.sidebarOpen); });
   document.querySelector("#global-search")?.addEventListener("click", focusSearch);
   document.querySelector(".drawer-backdrop")?.addEventListener("click", () => { closeDrawer(); state.sidebarOpen = false; document.querySelector(".app-shell")?.classList.remove("menu-open"); });
