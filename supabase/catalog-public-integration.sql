@@ -262,3 +262,23 @@ set active = true,
     end,
     updated_at = now();
 
+-- Primeras fotos optimizadas y encuadres seguros para tarjetas horizontales.
+update public.catalog_items as c
+set image_path = media.image_path,
+    image_alt = media.image_alt,
+    settings = c.settings || jsonb_build_object(
+      'image_fit','contain',
+      'image_position_x',50,
+      'image_position_y',50,
+      'image_zoom',1,
+      'image_background',media.image_background
+    ),
+    updated_at = now()
+from (values
+  ('llaveros','llaveros.webp','Llavero personalizado ATRY en azul y blanco','#d7d9dc'),
+  ('porta-qr','porta-qr.webp','Porta QR de mostrador negro y azul','#a8aaad'),
+  ('souvenirs','souvenirs.webp','Souvenirs personalizados en rosa y azul','#ded8d2'),
+  ('trofeos','trofeos.webp','Trofeo personalizado azul y plateado','#9fa0a2'),
+  ('jarrones','jarrones.webp','Jarrón blanco impreso en 3D con flores amarillas','#e4ded6')
+) as media(id,image_path,image_alt,image_background)
+where c.id = media.id;
