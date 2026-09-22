@@ -9,6 +9,7 @@ const state = {
   selected: null, query: "", status: "all", catalogQuery: "", catalogStatus: "all", catalogSelection: new Set(), catalogSelecting: false, loading: true, demo: !isSupabaseConfigured,
   user: null, sidebarOpen: false
 };
+let realtimeChannel=null,realtimeTimer=null,realtimePending=false,dataLoading=false;
 
 const nav = [
   ["dashboard", "ph-squares-four", "Resumen"], ["requests", "ph-clipboard-text", "Solicitudes"],
@@ -59,11 +60,14 @@ async function bootstrap(){
   if(!session){ state.loading = false; renderLogin(); return; }
   state.user = session.user;
   await loadData();
+  startRealtimeSync();
   supabase.auth.onAuthStateChange((_event, next) => { if(!next) renderLogin(); });
 }
 
-async function loadData(){
-  state.loading = true; render();
+async function loadData({quiet=false}={}){
+  if(dataLoading){realtimePending=true;return;}
+  dataLoading=true;
+  if(!quiet){state.loading = true;render();}
   const [requests, catalog, customers, jobs, attachments, settings, profiles] = await Promise.all([
     supabase.from("requests").select("*").order("created_at", {ascending:false}),
     supabase.from("catalog_items").select("*").order("sort_order", {ascending:true}),
@@ -74,10 +78,28 @@ async function loadData(){
     supabase.from("profiles").select("*").order("created_at", {ascending:true})
   ]);
   const failure = [requests, catalog, customers, jobs, attachments, settings, profiles].find(result => result.error);
-  if(failure){ state.loading = false; render(); toast(`No se pudieron cargar los datos: ${failure.error.message}`, "error"); return; }
+  if(failure){state.loading=false;dataLoading=false;render();toast(`No se pudieron cargar los datos: ${failure.error.message}`, "error");return;}
   state.requests = requests.data || []; state.catalog = catalog.data || []; state.customers = customers.data || [];
   state.jobs = jobs.data || []; state.attachments = attachments.data || []; state.settings = Object.fromEntries((settings.data || []).map(row => [row.key, row]));
-  state.profiles = profiles.data || []; state.loading = false; render();
+  const refreshAgain=realtimePending;
+  state.profiles = profiles.data || [];state.loading=false;dataLoading=false;realtimePending=false;render();
+  if(refreshAgain)queueRealtimeRefresh();
+}
+
+function realtimeRefreshBlocked(){return document.hidden||Boolean(document.querySelector("#modal-root")?.innerHTML)||Boolean(document.querySelector(".detail-drawer"))||Boolean(document.querySelector("input:focus,textarea:focus,select:focus"));}
+function queueRealtimeRefresh(){
+  clearTimeout(realtimeTimer);realtimeTimer=setTimeout(()=>{if(realtimeRefreshBlocked()){realtimePending=true;return;}loadData({quiet:true});},300);
+}
+function flushRealtimeRefresh(){if(realtimePending&&!realtimeRefreshBlocked())queueRealtimeRefresh();}
+function startRealtimeSync(){
+  if(state.demo||realtimeChannel)return;
+  realtimeChannel=supabase.channel("atry-admin-live");
+  ["requests","catalog_items","customers","production_jobs","request_attachments","app_settings","profiles"].forEach(table=>realtimeChannel.on("postgres_changes",{event:"*",schema:"public",table},queueRealtimeRefresh));
+  realtimeChannel.subscribe();
+  window.setInterval(()=>{if(!document.hidden&&!realtimeRefreshBlocked())loadData({quiet:true});else realtimePending=true;},20000);
+  window.addEventListener("focus",queueRealtimeRefresh);
+  document.addEventListener("visibilitychange",()=>{if(!document.hidden)queueRealtimeRefresh();});
+  document.addEventListener("focusout",()=>setTimeout(flushRealtimeRefresh,80));
 }
 
 function renderLogin(){
@@ -184,7 +206,7 @@ function openModal({title, eyebrow="ATRY LAB", description="", content, submitLa
   if(modalClass.includes("product-modal")) setTimeout(() => root.querySelector(".modal-close")?.focus({preventScroll:true}), 20);
   else setTimeout(() => root.querySelector("input:not([type='hidden']),select,textarea")?.focus({preventScroll:true}), 20);
 }
-function closeModal(){ const root = document.querySelector("#modal-root"); if(root) root.innerHTML = ""; if(document.body.classList.contains("modal-open")){ const pageScroll=Number(document.body.dataset.modalScroll||0); document.body.classList.remove("modal-open"); document.body.style.top=""; delete document.body.dataset.modalScroll; window.scrollTo(0,pageScroll); } }
+function closeModal(){ const root = document.querySelector("#modal-root"); if(root) root.innerHTML = ""; if(document.body.classList.contains("modal-open")){ const pageScroll=Number(document.body.dataset.modalScroll||0); document.body.classList.remove("modal-open"); document.body.style.top=""; delete document.body.dataset.modalScroll; window.scrollTo(0,pageScroll); } setTimeout(flushRealtimeRefresh,0); }
 const field = (label, name, value="", options="") => `<label>${label}<input name="${name}" value="${esc(value)}" ${options}></label>`;
 const textarea = (label, name, value="", placeholder="") => `<label class="span-2">${label}<textarea name="${name}" placeholder="${esc(placeholder)}">${esc(value)}</textarea></label>`;
 const select = (label, name, options, value="", extra="") => `<label>${label}<select name="${name}" ${extra}>${options.map(([id,text]) => `<option value="${esc(id)}" ${String(id) === String(value) ? "selected" : ""}>${esc(text)}</option>`).join("")}</select></label>`;
@@ -330,7 +352,7 @@ function detailDrawer(id){
   root.append(drawer); document.querySelector(".drawer-close").onclick = closeDrawer; document.querySelector("#status-select").onchange = event => updateStatus(id, event.target.value); document.querySelector("#drawer-edit").onclick = () => { closeDrawer(); requestModal(r); }; document.querySelector("#drawer-note").onclick = () => noteModal(r); document.querySelector("#drawer-delete").onclick = () => { closeDrawer(); confirmRequestDelete(r); }; document.querySelector("#edit-job")?.addEventListener("click", () => { closeDrawer(); jobModal(job, r); }); document.querySelectorAll("[data-attachment]").forEach(button => button.onclick = () => openAttachment(button.dataset.attachment));
 }
 async function openAttachment(path){ const {data, error} = await supabase.storage.from("request-attachments").createSignedUrl(path, 300); if(error){ toast("No se pudo abrir el archivo", "error"); return; } window.open(data.signedUrl, "_blank", "noopener"); }
-function closeDrawer(){ document.querySelector(".detail-drawer")?.remove(); document.querySelector(".app-shell")?.classList.remove("drawer-open"); state.selected = null; }
+function closeDrawer(){ document.querySelector(".detail-drawer")?.remove(); document.querySelector(".app-shell")?.classList.remove("drawer-open"); state.selected = null; setTimeout(flushRealtimeRefresh,0); }
 function noteModal(request){ openModal({title:"Agregar nota", eyebrow:request.id, description:"La nota se agrega al historial interno de la solicitud.", content:textarea("Nueva nota", "note", "", "Escribí una actualización clara"), submitLabel:"Agregar nota", onSubmit:async data => { const entry = `[${new Intl.DateTimeFormat("es-UY", {dateStyle:"short", timeStyle:"short"}).format(new Date())}] ${data.get("note")}`; const notes = [request.notes, entry].filter(Boolean).join("\n\n"); const {error} = await supabase.from("requests").update({notes, updated_at:new Date().toISOString()}).eq("id", request.id); if(error) throw error; closeModal(); closeDrawer(); await loadData(); toast("Nota agregada"); }}); }
 function confirmRequestDelete(request){
   const files=state.attachments.filter(file=>file.request_id===request.id).map(file=>file.storage_path);
