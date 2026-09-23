@@ -46,3 +46,7 @@ create policy "managers delete quote pdfs" on storage.objects for delete to auth
 
 do $$ begin alter publication supabase_realtime add table public.quotes; exception when duplicate_object then null; end $$;
 do $$ begin alter publication supabase_realtime add table public.quote_items; exception when duplicate_object then null; end $$;
+
+-- "Cotizada" deja de ser un estado operativo de la solicitud. El estado comercial
+-- vive en quotes.status; las filas antiguas vuelven a conversación sin perder datos.
+update public.requests set status='reviewing',updated_at=now() where status='quoted';
