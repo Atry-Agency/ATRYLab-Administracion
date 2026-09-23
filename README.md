@@ -34,6 +34,10 @@ Sin variables de entorno, el panel abre automáticamente una vista de demostraci
 4. Copiar el UUID del usuario y ejecutar la instrucción comentada al final de `schema.sql` para asignarle el rol `owner`.
 5. El esquema crea automáticamente el bucket privado `request-attachments` y sus políticas de acceso.
 
+## Cotizaciones
+
+Después del esquema inicial, ejecutá una vez `supabase/quotes.sql` en el SQL Editor de Supabase. La migración es aditiva: crea cotizaciones versionadas, artículos normalizados, numeración atómica, políticas RLS y el bucket privado `quote-pdfs`. No modifica la información original recibida desde la web.
+
 ## Seguridad
 
 - Nunca copiar `service_role`, contraseñas de base de datos ni secretos a `.env.local`.
