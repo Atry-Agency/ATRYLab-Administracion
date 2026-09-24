@@ -140,12 +140,12 @@ body.modal-open{width:100%;position:fixed;overflow:hidden;overscroll-behavior:no
 .icon-btn,.menu-toggle,.notification,.drawer-close,.drawer-delete,.catalog-select{align-items:center;justify-content:center;line-height:1}.icon-btn>i,.menu-toggle>i,.notification>i,.drawer-close>i,.drawer-delete>i,.catalog-select>i,.section-head>.primary>i,.welcome>.primary>i{display:block;margin:0;line-height:1;transform:none}.search-trigger>i,.header-logout>i{display:block;margin:0;line-height:1}
 
 /* Menús y paneles móviles: menos repintado, desplazamiento nativo y apertura fluida. */
-.drawer-backdrop{transition:background-color .18s ease}.detail-drawer{will-change:transform,opacity;transform:translateZ(0);backface-visibility:hidden;contain:layout paint}.drawer-body{-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scroll-behavior:smooth}.filters{-webkit-overflow-scrolling:touch;scrollbar-width:none;overscroll-behavior-inline:contain;scroll-snap-type:x proximity}.filters::-webkit-scrollbar{display:none}.filters>button{scroll-snap-align:start}.table-row,.request-row{content-visibility:auto;contain-intrinsic-size:76px}
+.drawer-backdrop{transition:background-color .16s ease}.detail-drawer{-webkit-font-smoothing:auto;text-rendering:optimizeLegibility}.drawer-body{-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y}.filters{-webkit-overflow-scrolling:touch;scrollbar-width:none;overscroll-behavior-inline:contain;scroll-snap-type:x proximity}.filters::-webkit-scrollbar{display:none}.filters>button{scroll-snap-align:start}.table-row,.request-row{content-visibility:auto;contain-intrinsic-size:76px}body.drawer-visible{overflow:hidden;overscroll-behavior:none}
 @media(max-width:760px){
   .drawer-open .drawer-backdrop,.menu-open .drawer-backdrop{backdrop-filter:none;background:rgba(3,17,22,.42)}
   .modal-backdrop{backdrop-filter:none;background:rgba(3,17,22,.56)}
   .sidebar{will-change:transform;backface-visibility:hidden;transition:transform .22s cubic-bezier(.22,.8,.24,1)}
-  .detail-drawer{animation-duration:.22s;animation-timing-function:cubic-bezier(.22,.8,.24,1)}
+  .detail-drawer{box-shadow:none;animation-duration:.16s;animation-timing-function:cubic-bezier(.2,.72,.24,1)}
   .section-head>.primary{width:auto!important;min-width:0!important;padding:0 14px!important;display:inline-flex!important;align-items:center;justify-content:center;font-size:11px!important;white-space:nowrap}
   .section-head>.primary>i{width:20px;height:20px;display:grid;place-items:center;font-size:20px}
   .production-modal .form-body{padding-bottom:28px}

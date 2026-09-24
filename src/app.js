@@ -544,7 +544,7 @@ function quoteSectionHtml(request,quotes){
 
 function detailDrawer(id){
   const r = state.requests.find(x => x.id === id); if(!r) return; state.selected = id; const job = state.jobs.find(j => j.request_id === id); const files = state.attachments.filter(file => file.request_id === id);
-  const root = document.querySelector(".app-shell"); root.classList.add("drawer-open"); const drawer = document.createElement("aside"); drawer.className = "detail-drawer request-detail-drawer";
+  const root = document.querySelector(".app-shell"); root.classList.add("drawer-open"); document.body.classList.add("drawer-visible"); const drawer = document.createElement("aside"); drawer.className = "detail-drawer request-detail-drawer";
   const whatsapp = whatsappNumber(r.customer_phone); const currentStatus=statusMeta[r.status]||{label:r.status,tone:"gray"};
   const delivery=deliveryOf(r); const deliveryMetaItem=deliveryMeta[delivery.status]||deliveryMeta.pending; const deliveryPlace=delivery.method==="shipping"?[delivery.address,delivery.city,delivery.department].filter(Boolean).join(", "):deliveryMethodLabel(delivery.method);
   const requestItems=Array.isArray(r.configuration?.items)?r.configuration.items:[]; const quotes=quoteForRequest(id);const currentQuote=quotes.find(q=>q.status==="accepted")||quotes.find(q=>q.status!=="replaced");const commercialValue=currentQuote?.total??r.amount;const commercialDeposit=currentQuote?.deposit_amount??r.deposit;const balance=commercialValue===null||commercialValue===undefined?null:Math.max(0,Number(commercialValue||0)-Number(commercialDeposit||0));
@@ -561,7 +561,7 @@ function detailDrawer(id){
   document.querySelectorAll("[data-quote-status]").forEach(button=>button.onclick=()=>setQuoteStatus(r,state.quotes.find(q=>q.id===button.dataset.quoteId),button.dataset.quoteStatus));
 }
 async function openAttachment(path){ const {data, error} = await supabase.storage.from("request-attachments").createSignedUrl(path, 300); if(error){ toast("No se pudo abrir el archivo", "error"); return; } window.open(data.signedUrl, "_blank", "noopener"); }
-function closeDrawer(){ document.querySelector(".detail-drawer")?.remove(); document.querySelector(".app-shell")?.classList.remove("drawer-open"); state.selected = null; setTimeout(flushRealtimeRefresh,0); }
+function closeDrawer(){ document.querySelector(".detail-drawer")?.remove(); document.querySelector(".app-shell")?.classList.remove("drawer-open"); document.body.classList.remove("drawer-visible"); state.selected = null; setTimeout(flushRealtimeRefresh,0); }
 function noteModal(request){ openModal({title:"Agregar nota", eyebrow:request.id, description:"La nota se agrega al historial interno de la solicitud.", content:textarea("Nueva nota", "note", "", "Escribí una actualización clara"), submitLabel:"Agregar nota", onSubmit:async data => { const entry = `[${new Intl.DateTimeFormat("es-UY", {dateStyle:"short", timeStyle:"short"}).format(new Date())}] ${data.get("note")}`; const notes = [request.notes, entry].filter(Boolean).join("\n\n"); const {error} = await supabase.from("requests").update({notes, updated_at:new Date().toISOString()}).eq("id", request.id); if(error) throw error; closeModal(); closeDrawer(); await loadData(); toast("Nota agregada"); }}); }
 function confirmRequestDelete(request){
   const files=state.attachments.filter(file=>file.request_id===request.id).map(file=>file.storage_path);
