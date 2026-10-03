@@ -208,7 +208,7 @@ const reservedForRoll=id=>state.filamentReservations.filter(item=>item.roll_id==
 const activeEstimateFor=requestId=>state.costEstimates.filter(item=>item.request_id===requestId&&item.status==="active").sort((a,b)=>Number(b.version)-Number(a.version))[0];
 const costLinesFor=estimateId=>state.costLines.filter(item=>item.estimate_id===estimateId).sort((a,b)=>a.sort_order-b.sort_order);
 const syncForRequest=requestId=>state.financeSync.find(item=>item.request_id===requestId);
-const rollColors=roll=>Array.isArray(roll.colors)&&roll.colors.length?roll.colors.filter(Boolean):[roll.color].filter(Boolean);
+const rollColors=roll=>Array.isArray(roll?.colors)&&roll.colors.length?roll.colors.filter(Boolean):[roll?.color].filter(Boolean);
 const filamentColorLabel=roll=>rollColors(roll).join(roll.color_mode==="gradient"?" → ":" + ")||roll.color||"Sin color";
 const filamentLabel=roll=>[roll.material,roll.finish_type&&roll.finish_type!=="standard"?filamentFinishLabel(roll.finish_type):"",roll.commercial_name||"",filamentColorLabel(roll),roll.brand||""].filter(Boolean).join(" · ");
 const grams=value=>`${new Intl.NumberFormat("es-UY",{maximumFractionDigits:1}).format(Number(value||0))} g`;
