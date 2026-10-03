@@ -189,6 +189,18 @@ as $$
   ),0)) from public.filament_rolls r where r.id=p_roll_id;
 $$;
 
+-- Keep the legacy implementation available for rollback, but move it out of the
+-- RPC name. Two overloads under the same PostgREST endpoint can be resolved
+-- inconsistently by clients whose schema cache has not refreshed yet.
+do $migration$
+begin
+  if to_regprocedure('public.create_filament_roll(text,text,numeric,numeric,text,text,text,numeric,date,text)') is not null then
+    alter function public.create_filament_roll(text,text,numeric,numeric,text,text,text,numeric,date,text)
+      rename to create_filament_roll_legacy;
+  end if;
+end
+$migration$;
+
 create or replace function public.create_filament_roll(
   p_material text, p_color text, p_initial_grams numeric, p_total_cost numeric default 0,
   p_brand text default null, p_lot_code text default null, p_currency text default 'UYU',
@@ -278,7 +290,7 @@ begin
 end $$;
 
 grant execute on function public.filament_available_grams(uuid) to authenticated;
-grant execute on function public.create_filament_roll(text,text,numeric,numeric,text,text,text,numeric,date,text) to authenticated;
+grant execute on function public.create_filament_roll(text,text,numeric,numeric,text,text,text,numeric,date,text,text,text,jsonb,text) to authenticated;
 grant execute on function public.record_filament_movement(uuid,numeric,text,text,text,uuid) to authenticated;
 grant execute on function public.reserve_request_filaments(text,uuid) to authenticated;
 grant execute on function public.release_request_filaments(text,text) to authenticated;
