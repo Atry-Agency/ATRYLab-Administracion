@@ -254,3 +254,12 @@ body.modal-open{width:100%;position:fixed;overflow:hidden;overscroll-behavior:no
   .inventory-summary small{font-size:8px;line-height:1.3}
   .request-detail-drawer>footer{grid-template-columns:40px repeat(3,minmax(0,1fr))}
 }
+
+.filament-variant{margin:12px 0 0;display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.filament-variant span,.filament-variant b{padding:6px 8px;border-radius:9px;color:#547078;background:#edf6f7;font-size:8px;font-weight:600}
+.filament-variant b{color:#087f96;background:#e1f6f9}
+.roll-colors-field input{letter-spacing:.01em}
+
+@media(max-width:760px){
+  .filament-variant span,.filament-variant b{padding:7px 9px;font-size:10px}
+}

@@ -5,6 +5,10 @@ create table if not exists public.filament_rolls (
   id uuid primary key default gen_random_uuid(),
   material text not null,
   color text not null,
+  finish_type text not null default 'standard',
+  color_mode text not null default 'solid',
+  colors jsonb not null default '[]'::jsonb,
+  commercial_name text,
   brand text,
   lot_code text,
   initial_grams numeric(10,2) not null check (initial_grams > 0),
@@ -19,6 +23,12 @@ create table if not exists public.filament_rolls (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.filament_rolls add column if not exists finish_type text not null default 'standard';
+alter table public.filament_rolls add column if not exists color_mode text not null default 'solid';
+alter table public.filament_rolls add column if not exists colors jsonb not null default '[]'::jsonb;
+alter table public.filament_rolls add column if not exists commercial_name text;
+update public.filament_rolls set colors=jsonb_build_array(color) where colors='[]'::jsonb and coalesce(trim(color),'')<>'';
 
 create table if not exists public.filament_movements (
   id bigint generated always as identity primary key,
@@ -182,14 +192,16 @@ $$;
 create or replace function public.create_filament_roll(
   p_material text, p_color text, p_initial_grams numeric, p_total_cost numeric default 0,
   p_brand text default null, p_lot_code text default null, p_currency text default 'UYU',
-  p_low_stock_threshold numeric default 150, p_purchased_at date default current_date, p_notes text default null
+  p_low_stock_threshold numeric default 150, p_purchased_at date default current_date, p_notes text default null,
+  p_finish_type text default 'standard', p_color_mode text default 'solid',
+  p_colors jsonb default '[]'::jsonb, p_commercial_name text default null
 ) returns uuid language plpgsql security definer set search_path=public as $$
 declare v_id uuid;
 begin
   if not public.is_manager() then raise exception 'Acceso denegado'; end if;
   if coalesce(trim(p_material),'')='' or coalesce(trim(p_color),'')='' or p_initial_grams<=0 then raise exception 'Datos de rollo inválidos'; end if;
-  insert into public.filament_rolls(material,color,brand,lot_code,initial_grams,current_grams,total_cost,currency,low_stock_threshold,status,purchased_at,notes,created_by)
-  values(trim(p_material),trim(p_color),nullif(trim(p_brand),''),nullif(trim(p_lot_code),''),p_initial_grams,p_initial_grams,greatest(coalesce(p_total_cost,0),0),coalesce(p_currency,'UYU'),greatest(coalesce(p_low_stock_threshold,150),0),case when p_initial_grams<=coalesce(p_low_stock_threshold,150) then 'low' else 'available' end,p_purchased_at,p_notes,auth.uid())
+  insert into public.filament_rolls(material,color,finish_type,color_mode,colors,commercial_name,brand,lot_code,initial_grams,current_grams,total_cost,currency,low_stock_threshold,status,purchased_at,notes,created_by)
+  values(trim(p_material),trim(p_color),coalesce(nullif(trim(p_finish_type),''),'standard'),coalesce(nullif(trim(p_color_mode),''),'solid'),case when jsonb_array_length(coalesce(p_colors,'[]'::jsonb))>0 then p_colors else jsonb_build_array(trim(p_color)) end,nullif(trim(p_commercial_name),''),nullif(trim(p_brand),''),nullif(trim(p_lot_code),''),p_initial_grams,p_initial_grams,greatest(coalesce(p_total_cost,0),0),coalesce(p_currency,'UYU'),greatest(coalesce(p_low_stock_threshold,150),0),case when p_initial_grams<=coalesce(p_low_stock_threshold,150) then 'low' else 'available' end,p_purchased_at,p_notes,auth.uid())
   returning id into v_id;
   insert into public.filament_movements(roll_id,movement_type,grams_delta,grams_before,grams_after,reason,created_by)
   values(v_id,'initial',p_initial_grams,0,p_initial_grams,'Alta del rollo',auth.uid());
