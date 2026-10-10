@@ -76,6 +76,7 @@ const filamentFinishLabel=id=>filamentFinishOptions.find(([value])=>value===id)?
 const filamentColorModeLabel=id=>filamentColorModeOptions.find(([value])=>value===id)?.[1]||id||"Color sólido";
 const slugify = value => String(value || "producto").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"") || "producto";
 const catalogImageUrl = path => path ? supabase.storage.from("catalog-images").getPublicUrl(path).data.publicUrl : "";
+const catalogGalleryPaths = item => (Array.isArray(item?.settings?.gallery_images) ? item.settings.gallery_images : []).map(image => typeof image === "string" ? image : image?.path).filter(path => typeof path === "string" && path.trim()).slice(0,2);
 const imageFrame = item => ({
   x: Math.min(100, Math.max(0, Number(item?.settings?.image_position_x ?? 50))),
   y: Math.min(100, Math.max(0, Number(item?.settings?.image_position_y ?? 50))),
@@ -389,6 +390,19 @@ function bindCatalogQuestions(initialQuestions,legacy){
   return ()=>{read();if(!explicit)return null;for(const question of questions){if(!question.label)throw new Error("Escribí la pregunta que verá el cliente.");if(question.type==="choice"&&(question.options.length<2||question.options.length>8))throw new Error("Cada pregunta de selección necesita entre dos y ocho opciones.");}return questions;};
 }
 
+function catalogGalleryEditor(item){
+  const paths=catalogGalleryPaths(item);
+  return `<section class="catalog-gallery-editor" aria-labelledby="catalog-gallery-title"><div><small>GALERÍA DEL PRODUCTO</small><h3 id="catalog-gallery-title">Hasta 3 fotos en total</h3><p>La foto principal está arriba. Estas dos son opcionales y solo aparecerán en la tienda si las cargás.</p></div><div class="catalog-gallery-slots">${[0,1].map(index=>{const path=paths[index],number=index+2,url=catalogImageUrl(path);return `<div class="catalog-gallery-slot ${path?"has-image":""}" data-gallery-slot="${number}"><div class="catalog-gallery-preview">${url?`<img src="${esc(url)}" alt="Foto ${number} actual de ${esc(item?.name||"producto")}">`:`<i class="ph ph-image-square" aria-hidden="true"></i><span>Sin foto ${number}</span>`}</div><div class="catalog-gallery-copy"><strong>Foto ${number}</strong><label class="catalog-gallery-upload"><input type="file" name="gallery_image_${number}" accept="image/png,image/jpeg,image/webp,image/avif"><i class="ph ph-upload-simple"></i><span>${path?"Reemplazar":"Agregar foto"}</span></label>${path?`<label class="catalog-gallery-remove"><input type="checkbox" name="remove_gallery_${number}"> Quitar esta foto</label>`:""}<small data-gallery-file-summary>JPG, PNG, WebP o AVIF · máximo 5 MB</small></div></div>`;}).join("")}</div></section>`;
+}
+
+function bindCatalogGalleryPreview(){
+  document.querySelectorAll("[data-gallery-slot]").forEach(slot=>{
+    const input=slot.querySelector('input[type="file"]'),preview=slot.querySelector(".catalog-gallery-preview"),summary=slot.querySelector("[data-gallery-file-summary]");
+    let objectUrl="";
+    input?.addEventListener("change",()=>{const file=input.files?.[0];if(!file)return;if(file.size>5*1024*1024||!/^image\/(png|jpeg|webp|avif)$/.test(file.type)){input.value="";toast("Usá una imagen JPG, PNG, WebP o AVIF de hasta 5 MB.","error");return;}if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(file);preview.innerHTML=`<img src="${objectUrl}" alt="Vista previa de la foto adicional">`;const remove=slot.querySelector('input[type="checkbox"]');if(remove)remove.checked=false;slot.classList.add("has-image");summary.textContent=file.name;});
+  });
+}
+
 function productModal(item=null){
   const currentStatus = item ? publicationState(item) : "draft"; const image = catalogImageUrl(item?.image_path); const frame = imageFrame(item);
   const currentIcon = item?.settings?.icon || "ph-cube";
@@ -405,19 +419,36 @@ function productModal(item=null){
       <div class="crop-options"><div class="fit-choice" role="group" aria-label="Modo de ajuste"><button type="button" data-fit="cover" class="${frame.fit === "cover" ? "active" : ""}"><i class="ph ph-crop"></i> Recortar tarjeta</button><button type="button" data-fit="contain" class="${frame.fit === "contain" ? "active" : ""}"><i class="ph ph-arrows-out-simple"></i> Ver completa</button></div><label class="background-choice"><span>Fondo</span><input type="color" name="image_background" value="${frame.background}" aria-label="Color de fondo"></label></div>
       <input type="hidden" name="image_position_x" value="${frame.x}"><input type="hidden" name="image_position_y" value="${frame.y}"><input type="hidden" name="image_fit" value="${frame.fit}">
       <p class="preview-help"><i class="ph ph-info"></i><span>El marco muestra el recorte exacto de la tarjeta. Al abrir el producto, la foto se verá completa.</span></p>
-      <label class="file-field compact image-upload"><input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/avif"><span class="upload-icon"><i class="ph ph-image-square"></i></span><span><strong>${image ? "Cambiar imagen" : "Subir imagen"}</strong><small>JPG, PNG, WebP o AVIF · máximo 5 MB</small></span><i class="ph ph-upload-simple"></i></label>${item?.image_path ? `<label class="check-field remove-image"><input type="checkbox" name="remove_image"><span>Quitar imagen actual</span></label>` : ""}
+      <label class="file-field compact image-upload"><input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/avif"><span class="upload-icon"><i class="ph ph-image-square"></i></span><span><strong>${image ? "Cambiar foto principal" : "Subir foto principal"}</strong><small>JPG, PNG, WebP o AVIF · máximo 5 MB</small></span><i class="ph ph-upload-simple"></i></label>${item?.image_path ? `<label class="check-field remove-image"><input type="checkbox" name="remove_image"><span>Quitar foto principal</span></label>` : ""}
+      ${catalogGalleryEditor(item)}
     </section>
     <div class="form-grid product-fields">${field("Nombre del producto *", "name", item?.name, 'required placeholder="Ej. Llaveros personalizados"')}${select("Categoría", "category", [["Tu marca","Tu marca"],["Personalizados","Personalizados"],["Negocios","Negocios"],["Eventos","Eventos"],["Hogar","Hogar"],["Casa","Casa"],["Figuras","Figuras"],["A medida","A medida"],["Trofeos & premios","Trofeos & premios"],["Prototipos & piezas","Prototipos & piezas"]], item?.category || "A medida")}${select("Disponibilidad", "publication_status", [["draft","Borrador · solo lo ves vos"],["upcoming","Próximamente · visible con aviso"],["published","Publicado · disponible para pedir"]], currentStatus, `class="publication-status-select ${currentStatus}"`)}${field("Pedido mínimo", "min_quantity", item?.min_quantity || 1, 'type="number" min="1" required')}${select("Etiqueta", "badge", badgeOptions, item?.badge || "")}${field("Texto alternativo de la foto", "image_alt", item?.image_alt || item?.name || "", 'placeholder="Ej. Llavero celeste y blanco"')}<fieldset class="icon-picker span-2"><legend>Icono del producto</legend><p>Elegí el que mejor representa el artículo.</p><div>${iconOptions.map(([icon,label]) => `<button type="button" data-product-icon="${icon}" class="${currentIcon === icon ? "active" : ""}" title="${label}"><i class="ph ${icon}"></i><span>${label}</span></button>`).join("")}</div><input type="hidden" name="icon" value="${currentIcon}"></fieldset>${textarea("Descripción para la web", "description", item?.description, "Contá qué es y para qué sirve en una frase clara")}${catalogQuestionEditor(initialQuestions,Boolean(item&&!hasConfiguredQuestions&&!legacyPrompt))}<label class="check-field span-2 featured-choice"><input type="checkbox" name="featured" ${checked(item?.featured)}><span><strong>Mostrar entre los destacados</strong><small>Aparecerá también en las selecciones principales del catálogo.</small></span></label><input type="hidden" name="sort_order" value="${item?.sort_order ?? nextOrder}"></div>
   </div>`, submitLabel:item ? "Guardar producto" : "Crear producto", onSubmit:async data => {
     const orderQuestions=collectCatalogQuestions();
-    const baseId = slugify(data.get("name")); const id = item?.id || `${baseId}-${Date.now().toString().slice(-5)}`; const publication = data.get("publication_status"); let imagePath = data.has("remove_image") ? null : (item?.image_path || null); const file = data.get("image");
-    if(file instanceof File && file.size){ imagePath = await uploadCatalogImage(id, file); }
+    const baseId = slugify(data.get("name")); const id = item?.id || `${baseId}-${Date.now().toString().slice(-5)}`; const publication = data.get("publication_status");
+    const oldPaths=[item?.image_path,...catalogGalleryPaths(item)].filter(Boolean),uploadedPaths=[];
+    let imagePath=data.has("remove_image")?null:(item?.image_path||null),galleryPaths=[];
+    try{
+      const primaryFile=data.get("image");if(primaryFile instanceof File&&primaryFile.size){imagePath=await uploadCatalogImage(id,primaryFile);uploadedPaths.push(imagePath);}
+      const oldGallery=catalogGalleryPaths(item);
+      for(let index=0;index<2;index++){
+        const number=index+2,file=data.get(`gallery_image_${number}`);
+        let path=data.has(`remove_gallery_${number}`)?null:(oldGallery[index]||null);
+        if(file instanceof File&&file.size){path=await uploadCatalogImage(id,file);uploadedPaths.push(path);}
+        if(path)galleryPaths.push(path);
+      }
+      if(!imagePath&&galleryPaths.length)imagePath=galleryPaths.shift();
+    }catch(error){if(uploadedPaths.length)await supabase.storage.from("catalog-images").remove(uploadedPaths);throw error;}
     const settings={...(item?.settings || {}), icon:data.get("icon") || "ph-cube", image_position_x:Number(data.get("image_position_x") || 50), image_position_y:Number(data.get("image_position_y") || 50), image_zoom:Number(data.get("image_zoom") || 1), image_fit:data.get("image_fit") === "contain" ? "contain" : "cover", image_background:data.get("image_background") || "#d9dcdf"};
+    settings.gallery_images=galleryPaths;
     if(orderQuestions!==null){settings.order_questions=orderQuestions;delete settings.request_prompt;}
     const payload = {id, name:data.get("name"), category:data.get("category"), description:data.get("description") || null, min_quantity:Number(data.get("min_quantity")), sort_order:Number(data.get("sort_order") || 0), active:publication !== "draft", publication_status:publication, featured:data.has("featured"), image_path:imagePath, image_alt:data.get("image_alt") || data.get("name"), badge:data.get("badge") || (publication === "upcoming" ? "Próximamente" : null), settings, updated_at:new Date().toISOString()};
-    const query = item ? supabase.from("catalog_items").update(payload).eq("id", item.id) : supabase.from("catalog_items").insert(payload); const {error} = await query; if(error) throw error;
+    const query = item ? supabase.from("catalog_items").update(payload).eq("id", item.id) : supabase.from("catalog_items").insert(payload); const {error} = await query;
+    if(error){if(uploadedPaths.length)await supabase.storage.from("catalog-images").remove(uploadedPaths);throw error;}
+    const retired=oldPaths.filter(path=>![imagePath,...galleryPaths].includes(path));
+    if(retired.length){const {error:removeError}=await supabase.storage.from("catalog-images").remove(retired);if(removeError)toast("Producto guardado, pero no se pudieron limpiar fotos anteriores.","error");}
     closeModal(); await loadData(); toast(item ? "Producto actualizado" : "Producto creado");
-  }}); collectCatalogQuestions=bindCatalogQuestions(initialQuestions,Boolean(item&&!hasConfiguredQuestions&&!legacyPrompt)); bindProductImagePreview();
+  }}); collectCatalogQuestions=bindCatalogQuestions(initialQuestions,Boolean(item&&!hasConfiguredQuestions&&!legacyPrompt)); bindProductImagePreview();bindCatalogGalleryPreview();
   bindProductChoices();
   if(item){ const footer=document.querySelector(".product-modal footer"); footer?.insertAdjacentHTML("afterbegin",`<button type="button" class="danger product-delete"><i class="ph ph-trash"></i>Eliminar producto</button><span class="footer-spacer"></span>`); document.querySelector(".product-delete")?.addEventListener("click",()=>confirmProductDelete(item)); }
 }
@@ -430,7 +461,7 @@ function bindProductChoices(){
 }
 
 function confirmProductDelete(item){
-  openModal({title:"¿Eliminar este producto?",eyebrow:"ACCIÓN PERMANENTE",description:"Esta acción no se puede deshacer.",modalClass:"delete-modal",submitLabel:"Sí, eliminar",content:`<div class="delete-warning"><i class="ph ph-trash"></i><div><strong>${esc(item.name)}</strong><p>Se quitará del panel y dejará de aparecer inmediatamente en el catálogo público.</p></div></div>`,onSubmit:async()=>{ if(state.demo){closeModal();toast("En la demostración no se eliminan productos");return;} const {error}=await supabase.from("catalog_items").delete().eq("id",item.id); if(error)throw error; if(item.image_path) await supabase.storage.from("catalog-images").remove([item.image_path]); closeModal(); await loadData(); toast("Producto eliminado"); }});
+  openModal({title:"¿Eliminar este producto?",eyebrow:"ACCIÓN PERMANENTE",description:"Esta acción no se puede deshacer.",modalClass:"delete-modal",submitLabel:"Sí, eliminar",content:`<div class="delete-warning"><i class="ph ph-trash"></i><div><strong>${esc(item.name)}</strong><p>Se quitará del panel y dejará de aparecer inmediatamente en el catálogo público.</p></div></div>`,onSubmit:async()=>{ if(state.demo){closeModal();toast("En la demostración no se eliminan productos");return;} const {error}=await supabase.from("catalog_items").delete().eq("id",item.id); if(error)throw error; const imagePaths=[item.image_path,...catalogGalleryPaths(item)].filter(Boolean);if(imagePaths.length)await supabase.storage.from("catalog-images").remove(imagePaths); closeModal(); await loadData(); toast("Producto eliminado"); }});
 }
 
 function bindProductImagePreview(){
@@ -459,9 +490,9 @@ function bindProductImagePreview(){
 }
 
 async function uploadCatalogImage(productId, file){
-  if(file.size > 5 * 1024 * 1024) throw new Error("La imagen supera los 5 MB.");
+  if(file.size > 5 * 1024 * 1024 || !/^image\/(png|jpeg|webp|avif)$/.test(file.type)) throw new Error("Usá una imagen JPG, PNG, WebP o AVIF de hasta 5 MB.");
   const extension = (file.name.split(".").pop() || "webp").toLowerCase().replace(/[^a-z0-9]/g, "");
-  const path = `productos/${productId}/${Date.now()}.${extension}`;
+  const path = `productos/${productId}/${crypto.randomUUID()}.${extension}`;
   const {error} = await supabase.storage.from("catalog-images").upload(path, file, {contentType:file.type || "image/webp", cacheControl:"31536000", upsert:false});
   if(error) throw error; return path;
 }
