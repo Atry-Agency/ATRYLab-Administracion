@@ -355,3 +355,7 @@ body.modal-open{width:100%;position:fixed;overflow:hidden;overscroll-behavior:no
 @media(max-width:760px){.experience-editor-row{grid-template-columns:23px 58px minmax(0,1fr) 62px}.experience-position{grid-column:3;grid-row:2;display:flex;align-items:center}.experience-editor-actions{grid-column:4;grid-row:1/3}}
 @media(max-width:360px){.experience-editor-row{grid-template-columns:21px 48px minmax(0,1fr) 56px}}
 @media(min-width:761px){.experience-editor-row{grid-template-columns:30px 72px minmax(0,1fr) 65px auto}}
+
+/* Selector de iconos ampliado y buscable. */
+.icon-picker .icon-picker-search{height:42px;margin:0 0 12px;padding:0 11px;display:flex;align-items:center;gap:8px;border:1px solid #d5e3e7;border-radius:11px;color:#1197ae;background:#fff}.icon-picker-search i{font-size:18px}.icon-picker-search input{width:100%;height:100%;padding:0;border:0;outline:0;color:var(--ink);background:transparent;font-size:11px}.icon-picker button.icon-filter-hidden{display:none!important}.icon-picker button span{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.25;font-size:8px}.icon-picker button{min-height:72px}.icon-picker .icon-picker-empty{margin:12px 0 0;color:#627a82;font-size:10px}.icon-picker .icon-picker-empty[hidden]{display:none}
+.icon-picker .icon-picker-search input,.icon-picker .icon-picker-search input:focus{padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}

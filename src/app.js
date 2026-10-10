@@ -63,7 +63,11 @@ const deliveryMethodLabel = method => ({shipping:"Envío",pickup:"Retiro",coordi
 const iconOptions = [
   ["ph-key","Llavero"],["ph-qr-code","Código QR"],["ph-trophy","Trofeo"],["ph-gift","Regalo"],
   ["ph-flower","Decoración"],["ph-paw-print","Mascota"],["ph-cube","Pieza 3D"],["ph-house","Hogar"],
-  ["ph-storefront","Negocio"],["ph-confetti","Evento"],["ph-shapes","Figura"],["ph-ruler","A medida"]
+  ["ph-storefront","Negocio"],["ph-confetti","Evento"],["ph-shapes","Figura"],["ph-ruler","A medida"],
+  ["ph-game-controller","Control gamer"],["ph-joystick","Joystick"],["ph-headset","Headset"],["ph-keyboard","Teclado"],["ph-monitor","Pantalla"],
+  ["ph-potted-plant","Maceta"],["ph-plant","Planta"],["ph-leaf","Hoja"],
+  ["ph-hammer","Martillo"],["ph-wrench","Herramienta"],["ph-screwdriver","Destornillador"],["ph-toolbox","Caja de herramientas"],["ph-gear","Engranaje"],
+  ["ph-coffee","Mate o café"],["ph-puzzle-piece","Puzzle"],["ph-paint-brush","Pintura"],["ph-lightbulb","Idea"],["ph-printer","Impresora 3D"],["ph-device-mobile","Celular"],["ph-cube-transparent","Diseño 3D"]
 ];
 const badgeOptions = [["","Sin etiqueta"],["Nuevo","Nuevo"],["Popular","Popular"],["Recomendado","Recomendado"],["Edición limitada","Edición limitada"],["Para regalar","Para regalar"],["Empresas","Empresas"]];
 const catalogQuestionTypes = [
@@ -540,6 +544,14 @@ function productModal(item=null){
 
 function bindProductChoices(){
   const iconInput=document.querySelector('input[name="icon"]');
+  const picker=document.querySelector(".icon-picker"),grid=picker?.querySelector(":scope > div");
+  if(grid){
+    grid.insertAdjacentHTML("beforebegin",`<label class="icon-picker-search"><i class="ph ph-magnifying-glass" aria-hidden="true"></i><input type="search" placeholder="Buscar control, maceta, herramienta…" aria-label="Buscar icono del producto"></label>`);
+    grid.insertAdjacentHTML("afterend",`<p class="icon-picker-empty" hidden>No encontramos ese icono. Probá con otra palabra.</p>`);
+    const search=picker.querySelector(".icon-picker-search input"),empty=picker.querySelector(".icon-picker-empty");
+    const normalize=value=>String(value||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+    search.addEventListener("input",()=>{const term=normalize(search.value.trim());let visible=0;grid.querySelectorAll("[data-product-icon]").forEach(button=>{const match=normalize(`${button.textContent} ${button.dataset.productIcon}`).includes(term);button.classList.toggle("icon-filter-hidden",!match);if(match)visible++;});empty.hidden=Boolean(visible);});
+  }
   document.querySelectorAll("[data-product-icon]").forEach(button => button.addEventListener("click",()=>{ if(!iconInput)return; iconInput.value=button.dataset.productIcon; document.querySelectorAll("[data-product-icon]").forEach(entry=>entry.classList.toggle("active",entry===button)); }));
   const publication=document.querySelector('.publication-status-select');
   publication?.addEventListener("change",()=>{ publication.classList.remove("published","upcoming","draft"); publication.classList.add(publication.value); });
