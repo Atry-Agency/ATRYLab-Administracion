@@ -5,6 +5,7 @@ import { generateQuotePdf } from "./quote-pdf.js";
 import { calculateCostEstimate, financeSyncKey, inventoryStatus, rollCostPerGram } from "./costing.js";
 import {featuredUpdates,isPublicProduct,moveFeatured,orderedFeatured} from "./featured.js";
 import {normalizeExperiences} from "./experiences.js";
+import {siteThemePresets,normalizeSiteTheme,effectiveSiteTheme} from "./site-theme.js";
 
 const asset = path => `${import.meta.env.BASE_URL || "/"}${path.replace(/^\//, "")}`;
 const logo = asset("recursos/atry-isotipo.png");
@@ -328,12 +329,13 @@ function experiencesView(){
 }
 
 async function saveExperiences(config,message){
-  if(state.demo){state.settings.home_experiences={key:"home_experiences",value:config};render();toast(message);return;}
+  const value={...(state.settings.home_experiences?.value||{}),...config};
+  if(state.demo){state.settings.home_experiences={key:"home_experiences",value};render();toast(message);return;}
   const {error:publicError}=await supabase.rpc("get_public_experiences");
   if(publicError)throw new Error("La conexión pública de Experiencias aún no está activada en Supabase.");
-  const {error}=await supabase.from("app_settings").upsert({key:"home_experiences",value:config,updated_by:state.user?.id,updated_at:new Date().toISOString()});
+  const {error}=await supabase.from("app_settings").upsert({key:"home_experiences",value,updated_by:state.user?.id,updated_at:new Date().toISOString()});
   if(error)throw error;
-  state.settings.home_experiences={key:"home_experiences",value:config};render();toast(message);
+  state.settings.home_experiences={key:"home_experiences",value};render();toast(message);
 }
 function editExperiencesHeading(){
   const config=experiencesConfig();
@@ -366,10 +368,56 @@ function customersView(){
   return `<section class="section-head"><div><h2>Clientes</h2><p>Datos de contacto, historial y contexto comercial.</p></div><button class="primary" data-action="new-customer"><i class="ph ph-user-plus"></i>Nuevo cliente</button></section><section class="customer-grid">${state.customers.length ? state.customers.map(customer => { const stats = customerStats(customer); return `<article><span class="customer-avatar">${esc(customer.full_name).slice(0,1)}</span><div><h3>${esc(customer.full_name)}</h3><p>${esc(customer.company || "Cliente particular")}</p><small>${esc(customer.phone || customer.email || "Sin contacto")}</small></div><dl><div><dt>Solicitudes</dt><dd>${stats.count}</dd></div><div><dt>Valor</dt><dd>${money(stats.value)}</dd></div></dl><button class="icon-btn" data-edit-customer="${esc(customer.id)}" title="Editar cliente"><i class="ph ph-pencil-simple"></i></button></article>`; }).join("") : emptyState("ph-users", "Todavía no hay clientes", "Creá el primero o se agregarán cuando conectemos la web.")}</section>`;
 }
 
+const siteThemeConfig=()=>normalizeSiteTheme(state.settings.home_experiences?.value?.site_theme);
+const siteThemeLocalDateTime=iso=>{if(!iso||!Number.isFinite(Date.parse(iso)))return "";const date=new Date(iso),pad=value=>String(value).padStart(2,"0");return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;};
+function siteThemeSection(){
+  const config=siteThemeConfig(),active=effectiveSiteTheme(config),chosen=siteThemePresets.find(theme=>theme.id===config.selected),current=siteThemePresets.find(theme=>theme.id===active);
+  const schedule=config.selected!=="original"&&active==="original"?"Programada o finalizada":config.ends_at?"Activa hasta la fecha indicada":"Activa hasta que la cambies";
+  return `<section class="panel site-theme-settings"><div class="site-theme-settings-copy"><span class="setting-icon"><i class="ph ph-paint-brush-broad"></i></span><div><small>VISIBLE PARA TODAS LAS PERSONAS</small><h3>Temática de la web</h3><p>Cambiá el ambiente de ATRY Lab por temporada. Original conserva siempre sus textos y destacados.</p></div></div><div class="site-theme-current"><span class="site-theme-current-swatch" style="--theme-page:${chosen.colors[0]};--theme-ink:${chosen.colors[1]};--theme-accent:${chosen.colors[2]}"><i class="ph ${chosen.icon}"></i></span><div><small>SELECCIÓN ACTUAL</small><strong>${esc(chosen.name)}</strong><span>${config.selected==="original"?"La web está en su versión original.":active==="original"?`${schedule} · Ahora se muestra Original.`:`${schedule} · Visible: ${esc(current.name)}.`}</span></div><button class="secondary" data-action="site-theme-settings"><i class="ph ph-sliders-horizontal"></i>Administrar</button></div></section>`;
+}
+async function saveSiteTheme(config){
+  const value={...(state.settings.home_experiences?.value||{}),site_theme:normalizeSiteTheme(config)};
+  if(state.demo){state.settings.home_experiences={key:"home_experiences",value};render();toast("Temática actualizada en la vista de demostración");return;}
+  const {error:publicError}=await supabase.rpc("get_public_experiences");
+  if(publicError)throw new Error("La conexión pública de la tienda aún no está activada en Supabase.");
+  const {error}=await supabase.from("app_settings").upsert({key:"home_experiences",value,updated_by:state.user?.id,updated_at:new Date().toISOString()});
+  if(error)throw error;
+  state.settings.home_experiences={key:"home_experiences",value};render();toast("Temática de la web actualizada");
+}
+function siteThemeModal(){
+  const draft=siteThemeConfig();let selected=draft.selected;
+  const products=state.catalog.filter(isPublicProduct).sort((a,b)=>Number(a.sort_order||0)-Number(b.sort_order||0));
+  openModal({title:"Temática de la web",eyebrow:"ATRY LAB · TIENDA",description:"Elegí una temporada. Los campos de campaña son opcionales: si quedan vacíos, solo cambia la estética.",wide:true,modalClass:"site-theme-modal",submitLabel:"Publicar configuración",content:`<div class="site-theme-editor"><div class="site-theme-picker" role="group" aria-label="Elegir temática">${siteThemePresets.map(theme=>`<button type="button" data-site-theme="${theme.id}" class="${selected===theme.id?"active":""}" aria-pressed="${selected===theme.id}"><span class="site-theme-mini" style="--theme-page:${theme.colors[0]};--theme-ink:${theme.colors[1]};--theme-accent:${theme.colors[2]}"><i class="ph ${theme.icon}"></i></span><strong>${theme.name}</strong><small>${theme.description}</small></button>`).join("")}</div><div id="site-theme-fields"></div><div id="site-theme-preview"></div></div>`,onSubmit:async()=>{capture();if(selected==="original"){draft.starts_at="";draft.ends_at="";}else{const ids=draft.campaigns[selected].featured_ids;if(new Set(ids).size!==ids.length)throw new Error("Un producto no puede repetirse entre los destacados de la temporada.");if(draft.starts_at&&draft.ends_at&&Date.parse(draft.ends_at)<=Date.parse(draft.starts_at))throw new Error("El final debe ser posterior al inicio.");}await saveSiteTheme(draft);closeModal();}});
+  const fields=document.querySelector("#site-theme-fields"),preview=document.querySelector("#site-theme-preview");
+  const dateValue=value=>value?new Date(value).toISOString():"";
+  function capture(){
+    if(selected==="original")return;
+    const form=fields;
+    draft.campaigns[selected]={line_1:form.querySelector('[name="line_1"]')?.value.trim()||"",line_2:form.querySelector('[name="line_2"]')?.value.trim()||"",description:form.querySelector('[name="description"]')?.value.trim()||"",featured_ids:[...form.querySelectorAll('[name="featured_id"]')].map(input=>input.value).filter(Boolean)};
+    draft.starts_at=dateValue(form.querySelector('[name="starts_at"]')?.value);
+    draft.ends_at=dateValue(form.querySelector('[name="ends_at"]')?.value);
+  }
+  function updatePreview(){
+    const campaign=selected==="original"?{}:{line_1:fields.querySelector('[name="line_1"]')?.value.trim(),line_2:fields.querySelector('[name="line_2"]')?.value.trim(),description:fields.querySelector('[name="description"]')?.value.trim(),featured_ids:[...fields.querySelectorAll('[name="featured_id"]')].map(input=>input.value).filter(Boolean)};
+    const preset=siteThemePresets.find(theme=>theme.id===selected),items=campaign.featured_ids?.length?campaign.featured_ids.map(id=>products.find(item=>item.id===id)).filter(Boolean):orderedFeatured(products).slice(0,4);
+    preview.innerHTML=`<div class="site-theme-preview-label"><small>VISTA PREVIA · ${esc(preset.name.toUpperCase())}</small><span>Los cambios no se publican hasta guardar.</span></div><div class="site-theme-preview-stage" style="--theme-page:${preset.colors[0]};--theme-ink:${preset.colors[1]};--theme-accent:${preset.colors[2]}"><span class="site-theme-preview-chip"><i class="ph ${preset.icon}"></i>${esc(preset.name)}</span><h3>${esc(campaign.line_1||"Lo imaginás.")}<br><em>${esc(campaign.line_2||"Nosotros lo fabricamos.")}</em></h3><p>${esc(campaign.description||"Diseño y fabricación 3D personalizada. Desde una pieza única hasta producciones para marcas, negocios y eventos.")}</p><div class="site-theme-preview-products">${items.slice(0,4).map(item=>`<span>${esc(item.name)}</span>`).join("")||"<span>Los productos se mostrarán cuando haya publicados.</span>"}</div></div>`;
+  }
+  function showFields(){
+    document.querySelectorAll("[data-site-theme]").forEach(button=>{const active=button.dataset.siteTheme===selected;button.classList.toggle("active",active);button.setAttribute("aria-pressed",String(active));});
+    if(selected==="original"){fields.innerHTML='<div class="site-theme-original"><i class="ph ph-lock-key"></i><div><strong>Original permanece intacto</strong><p>Al elegirlo, la web recupera sus textos, colores y destacados habituales. Las campañas guardadas quedan listas para volver a usarlas.</p></div></div>';updatePreview();return;}
+    const campaign=draft.campaigns[selected],productOptions=(id)=>`<option value="">Sin seleccionar</option>${products.map(item=>`<option value="${esc(item.id)}" ${item.id===id?"selected":""}>${esc(item.name)}</option>`).join("")}`;
+    fields.innerHTML=`<div class="site-theme-fields-head"><h3>Campaña opcional</h3><p>Dejá todo vacío para aplicar solo la estética. Original nunca usa estos cambios.</p></div><div class="site-theme-form-grid"><label>Primera línea del hero<input name="line_1" maxlength="70" value="${esc(campaign.line_1)}" placeholder="Lo imaginás."></label><label>Segunda línea del hero<input name="line_2" maxlength="70" value="${esc(campaign.line_2)}" placeholder="Nosotros lo fabricamos."></label><label class="wide">Descripción breve<textarea name="description" maxlength="220" rows="3" placeholder="Diseño y fabricación 3D personalizada…">${esc(campaign.description)}</textarea></label></div><div class="site-theme-fields-head"><h3>Destacados de la temporada</h3><p>Si no seleccionás ninguno, se mantienen los destacados habituales. Podés elegir hasta ocho en orden.</p></div><div class="site-theme-product-slots">${Array.from({length:8},(_,index)=>`<label><span>${index+1}</span><select name="featured_id">${productOptions(campaign.featured_ids[index])}</select></label>`).join("")}</div><div class="site-theme-fields-head"><h3>Programación</h3><p>Opcional. Sin inicio se publica al guardar; sin final queda activa hasta que la cambies. Las fechas usan la hora de tu dispositivo.</p></div><div class="site-theme-form-grid"><label>Inicio<input name="starts_at" type="datetime-local" value="${esc(siteThemeLocalDateTime(draft.starts_at))}"></label><label>Final<input name="ends_at" type="datetime-local" value="${esc(siteThemeLocalDateTime(draft.ends_at))}"></label></div>`;
+    fields.querySelectorAll("input,textarea,select").forEach(input=>input.addEventListener("input",updatePreview));updatePreview();
+  }
+  document.querySelectorAll("[data-site-theme]").forEach(button=>button.addEventListener("click",()=>{capture();selected=button.dataset.siteTheme;draft.selected=selected;showFields();}));
+  showFields();
+}
+
 function settingsView(){
   const channels = setting("contact_channels"); const business = setting("business_profile"),cost=costParameters();
   return `<section class="section-head"><div><h2>Configuración</h2><p>Datos operativos, costos, contacto y acceso del equipo.</p></div></section>
     <section class="panel theme-settings" aria-labelledby="theme-settings-title"><div class="theme-settings-heading"><span class="setting-icon"><i class="ph ph-palette"></i></span><div><small>APARIENCIA PERSONAL</small><h3 id="theme-settings-title">Estética del panel</h3><p>Elegí el tema que te resulte más cómodo. Solo cambia tu cuenta; no modifica los productos ni el panel de otras personas.</p></div></div><div class="theme-options" role="group" aria-label="Temas del panel">${panelThemes.map(theme=>`<button type="button" class="theme-option ${state.theme===theme.id?"active":""}" data-panel-theme="${theme.id}" aria-pressed="${state.theme===theme.id}"><span class="theme-swatch" aria-hidden="true" style="--sample-sidebar:${theme.swatches[0]};--sample-accent:${theme.swatches[1]};--sample-page:${theme.swatches[2]}"><span></span><i></i></span><span class="theme-option-copy"><strong>${theme.name}</strong><small>${theme.description}</small></span><i class="ph ${state.theme===theme.id?"ph-check-circle":"ph-circle"}" aria-hidden="true"></i></button>`).join("")}</div></section>
+    ${siteThemeSection()}
     <section class="settings-grid"><article class="panel"><span class="setting-icon"><i class="ph ph-whatsapp-logo"></i></span><div><h3>Canales de contacto</h3><p>${esc(channels.whatsapp || "WhatsApp sin configurar")} · ${esc(channels.email || "Correo sin configurar")}</p></div><button data-action="contact-settings">Administrar</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-buildings"></i></span><div><h3>Datos del taller</h3><p>${esc(business.city || "Montevideo")}${business.pickup_address ? ` · ${esc(business.pickup_address)}` : ""}</p></div><button data-action="business-settings">Administrar</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-calculator"></i></span><div><h3>Parámetros de costos</h3><p>${quoteMoney(cost.electricity_rate)}/kWh · margen ${Number(cost.target_margin_percent)}%</p></div><button data-action="cost-settings">Administrar</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-google-logo"></i></span><div><h3>Google Sheets</h3><p>Ventas, costos y estados · ${state.financeSync.filter(item=>item.sync_status==="error").length} errores pendientes</p></div><button data-action="sheet-settings">Revisar</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-users-three"></i></span><div><h3>Equipo y permisos</h3><p>${state.profiles.length} ${state.profiles.length === 1 ? "persona autorizada" : "personas autorizadas"}.</p></div><button data-action="team-settings">Ver equipo</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-shield-check"></i></span><div><h3>Seguridad</h3><p>Supabase Auth, RLS y archivos privados activos.</p></div><button data-action="security-info">Revisar</button></article></section>`;
 }
 
@@ -987,7 +1035,7 @@ function bindGlobal(){
   document.querySelectorAll("[data-logout]").forEach(button => button.addEventListener("click", async() => { if(state.demo){ toast("La sesión demo permanece activa"); return; } button.disabled=true; button.innerHTML='<i class="ph ph-circle-notch spin"></i><span>Saliendo</span>'; const {error}=await supabase.auth.signOut(); if(error){ toast("No se pudo cerrar la sesión", "error"); button.disabled=false; button.innerHTML='<i class="ph ph-sign-out"></i><span>Salir</span>'; } }));
 }
 function handleAction(action){
-  ({"new-request":() => requestModal(), "new-product":() => productModal(), "new-customer":() => customerModal(), "new-job":() => jobModal(), "new-roll":()=>rollModal(),"manual-consumption":()=>movementModal(), "contact-settings":() => settingsModal("contact"), "business-settings":() => settingsModal("business"),"cost-settings":()=>settingsModal("cost"),"sheet-settings":sheetSyncModal, "team-settings":teamModal, "security-info":securityModal}[action] || (() => {}))();
+  ({"new-request":() => requestModal(), "new-product":() => productModal(), "new-customer":() => customerModal(), "new-job":() => jobModal(), "new-roll":()=>rollModal(),"manual-consumption":()=>movementModal(), "contact-settings":() => settingsModal("contact"), "business-settings":() => settingsModal("business"),"cost-settings":()=>settingsModal("cost"),"sheet-settings":sheetSyncModal, "site-theme-settings":siteThemeModal, "team-settings":teamModal, "security-info":securityModal}[action] || (() => {}))();
 }
 function focusSearch(){ state.page = "requests"; render(); setTimeout(() => document.querySelector("#request-search")?.focus(), 0); }
 document.addEventListener("keydown", event => { if(event.key === "Escape"){ if(document.querySelector("#modal-root")?.innerHTML) closeModal(); else closeDrawer(); } if((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k"){ event.preventDefault(); focusSearch();return;}const typing=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName),modal=Boolean(document.querySelector("#modal-root")?.innerHTML);if(typing||modal||event.ctrlKey||event.metaKey||event.altKey)return;const key=event.key.toLowerCase();if(key==="/"){event.preventDefault();focusSearch();}else if(key==="n")requestModal();else if(key==="f"){state.page="filaments";render();}else if(key==="a")rollModal();else if(key==="m")movementModal();else if(key==="c"&&state.selected){const request=state.requests.find(item=>item.id===state.selected);if(request){closeDrawer();costCalculatorModal(request);}}else if(key==="q"&&state.selected){const request=state.requests.find(item=>item.id===state.selected);if(request){closeDrawer();quoteEditor(request,quoteForRequest(request.id).find(q=>q.status!=="replaced"));}} });
