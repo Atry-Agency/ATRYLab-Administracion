@@ -10,9 +10,26 @@ const state = {
   page: "dashboard", requests: [], catalog: [], customers: [], jobs: [], attachments: [], quotes: [], quoteItems: [], settings: {}, profiles: [],
   filamentRolls: [], filamentMovements: [], filamentReservations: [], costEstimates: [], costLines: [], financeSync: [], filamentQuery:"", filamentStatus:"all",
   selected: null, query: "", status: "all", catalogQuery: "", catalogStatus: "all", catalogSelection: new Set(), catalogSelecting: false, analyticsPeriod: "month", loading: true, demo: !isSupabaseConfigured,
-  user: null, sidebarOpen: false
+  user: null, sidebarOpen: false, theme: "original"
 };
 let realtimeChannel=null,realtimeTimer=null,realtimePending=false,dataLoading=false;
+const panelThemes=[
+  {id:"original",name:"Azul noche",description:"La estética original del panel.",swatches:["#071a21","#10bde1","#f5f7f7"]},
+  {id:"celeste",name:"Celeste ATRY",description:"Más luminoso, con el celeste de la marca.",swatches:["#16d7ec","#0a5263","#effbfc"]},
+  {id:"grafito",name:"Grafito",description:"Neutro y sobrio para trabajar a diario.",swatches:["#28343a","#a9cbd0","#f2f3f2"]},
+  {id:"marfil",name:"Marfil",description:"Tonos cálidos y lectura clara.",swatches:["#e8dece","#895a36","#f9f7f1"]}
+];
+const validPanelTheme=value=>panelThemes.some(theme=>theme.id===value)?value:"original";
+const themeStorageKey=()=>`atry-admin-theme:${state.user?.id||"demo"}`;
+function applyPanelTheme(value){state.theme=validPanelTheme(value);document.documentElement.dataset.adminTheme=state.theme;}
+function restorePanelTheme(){let saved;try{saved=localStorage.getItem(themeStorageKey());}catch{}applyPanelTheme(validPanelTheme(state.user?.user_metadata?.admin_theme||saved));}
+async function choosePanelTheme(value){
+  const next=validPanelTheme(value),previous=state.theme;if(next===previous)return;
+  applyPanelTheme(next);render();
+  if(!state.demo){const {data,error}=await supabase.auth.updateUser({data:{admin_theme:next}});if(error){applyPanelTheme(previous);render();toast("No se pudo guardar el tema en tu cuenta. Intentá de nuevo.","error");return;}state.user=data.user;}
+  try{localStorage.setItem(themeStorageKey(),next);}catch{}
+  toast("Tema del panel actualizado");
+}
 
 const nav = [
   ["dashboard", "ph-squares-four", "Resumen"], ["requests", "ph-clipboard-text", "Solicitudes"],
@@ -87,13 +104,14 @@ const imageFrame = item => ({
 const imageFrameStyle = item => { const frame = imageFrame(item); return `--image-x:${frame.x}%;--image-y:${frame.y}%;--image-zoom:${frame.zoom};--image-fit:${frame.fit};--image-bg:${frame.background}`; };
 
 async function bootstrap(){
-  if(state.demo){ state.requests = [...demoRequests]; state.catalog = [...demoCatalog]; state.loading = false; render(); return; }
+  if(state.demo){ restorePanelTheme();state.requests = [...demoRequests]; state.catalog = [...demoCatalog]; state.loading = false; render(); return; }
   const {data:{session}} = await supabase.auth.getSession();
   if(!session){ state.loading = false; renderLogin(); return; }
   state.user = session.user;
+  restorePanelTheme();
   await loadData();
   startRealtimeSync();
-  supabase.auth.onAuthStateChange((_event, next) => { if(!next) renderLogin(); });
+  supabase.auth.onAuthStateChange((_event, next) => { if(!next){state.user=null;applyPanelTheme("original");renderLogin();} });
 }
 
 async function loadData({quiet=false}={}){
@@ -158,7 +176,7 @@ async function signIn(event){
   button.disabled = true; button.innerHTML = 'Verificando <i class="ph ph-circle-notch spin"></i>';
   const {data, error} = await supabase.auth.signInWithPassword({email:form.get("email"), password:form.get("password")});
   if(error){ document.querySelector("#login-message").textContent = "No pudimos validar esos datos."; button.disabled = false; button.innerHTML = 'Ingresar <i class="ph ph-arrow-right"></i>'; return; }
-  state.user = data.user; await loadData();
+  state.user = data.user; restorePanelTheme();await loadData();
 }
 
 function shell(content){
@@ -279,7 +297,9 @@ function customersView(){
 
 function settingsView(){
   const channels = setting("contact_channels"); const business = setting("business_profile"),cost=costParameters();
-  return `<section class="section-head"><div><h2>Configuración</h2><p>Datos operativos, costos, contacto y acceso del equipo.</p></div></section><section class="settings-grid"><article class="panel"><span class="setting-icon"><i class="ph ph-whatsapp-logo"></i></span><div><h3>Canales de contacto</h3><p>${esc(channels.whatsapp || "WhatsApp sin configurar")} · ${esc(channels.email || "Correo sin configurar")}</p></div><button data-action="contact-settings">Administrar</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-buildings"></i></span><div><h3>Datos del taller</h3><p>${esc(business.city || "Montevideo")}${business.pickup_address ? ` · ${esc(business.pickup_address)}` : ""}</p></div><button data-action="business-settings">Administrar</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-calculator"></i></span><div><h3>Parámetros de costos</h3><p>${quoteMoney(cost.electricity_rate)}/kWh · margen ${Number(cost.target_margin_percent)}%</p></div><button data-action="cost-settings">Administrar</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-google-logo"></i></span><div><h3>Google Sheets</h3><p>Ventas, costos y estados · ${state.financeSync.filter(item=>item.sync_status==="error").length} errores pendientes</p></div><button data-action="sheet-settings">Revisar</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-users-three"></i></span><div><h3>Equipo y permisos</h3><p>${state.profiles.length} ${state.profiles.length === 1 ? "persona autorizada" : "personas autorizadas"}.</p></div><button data-action="team-settings">Ver equipo</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-shield-check"></i></span><div><h3>Seguridad</h3><p>Supabase Auth, RLS y archivos privados activos.</p></div><button data-action="security-info">Revisar</button></article></section>`;
+  return `<section class="section-head"><div><h2>Configuración</h2><p>Datos operativos, costos, contacto y acceso del equipo.</p></div></section>
+    <section class="panel theme-settings" aria-labelledby="theme-settings-title"><div class="theme-settings-heading"><span class="setting-icon"><i class="ph ph-palette"></i></span><div><small>APARIENCIA PERSONAL</small><h3 id="theme-settings-title">Estética del panel</h3><p>Elegí el tema que te resulte más cómodo. Solo cambia tu cuenta; no modifica los productos ni el panel de otras personas.</p></div></div><div class="theme-options" role="group" aria-label="Temas del panel">${panelThemes.map(theme=>`<button type="button" class="theme-option ${state.theme===theme.id?"active":""}" data-panel-theme="${theme.id}" aria-pressed="${state.theme===theme.id}"><span class="theme-swatch" aria-hidden="true" style="--sample-sidebar:${theme.swatches[0]};--sample-accent:${theme.swatches[1]};--sample-page:${theme.swatches[2]}"><span></span><i></i></span><span class="theme-option-copy"><strong>${theme.name}</strong><small>${theme.description}</small></span><i class="ph ${state.theme===theme.id?"ph-check-circle":"ph-circle"}" aria-hidden="true"></i></button>`).join("")}</div></section>
+    <section class="settings-grid"><article class="panel"><span class="setting-icon"><i class="ph ph-whatsapp-logo"></i></span><div><h3>Canales de contacto</h3><p>${esc(channels.whatsapp || "WhatsApp sin configurar")} · ${esc(channels.email || "Correo sin configurar")}</p></div><button data-action="contact-settings">Administrar</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-buildings"></i></span><div><h3>Datos del taller</h3><p>${esc(business.city || "Montevideo")}${business.pickup_address ? ` · ${esc(business.pickup_address)}` : ""}</p></div><button data-action="business-settings">Administrar</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-calculator"></i></span><div><h3>Parámetros de costos</h3><p>${quoteMoney(cost.electricity_rate)}/kWh · margen ${Number(cost.target_margin_percent)}%</p></div><button data-action="cost-settings">Administrar</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-google-logo"></i></span><div><h3>Google Sheets</h3><p>Ventas, costos y estados · ${state.financeSync.filter(item=>item.sync_status==="error").length} errores pendientes</p></div><button data-action="sheet-settings">Revisar</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-users-three"></i></span><div><h3>Equipo y permisos</h3><p>${state.profiles.length} ${state.profiles.length === 1 ? "persona autorizada" : "personas autorizadas"}.</p></div><button data-action="team-settings">Ver equipo</button></article><article class="panel"><span class="setting-icon"><i class="ph ph-shield-check"></i></span><div><h3>Seguridad</h3><p>Supabase Auth, RLS y archivos privados activos.</p></div><button data-action="security-info">Revisar</button></article></section>`;
 }
 
 function openModal({title, eyebrow="ATRY LAB", description="", content, submitLabel="Guardar cambios", onSubmit, wide=false, modalClass=""}){
@@ -845,6 +865,7 @@ function bindGlobal(){
   document.querySelectorAll("[data-delivery-status]").forEach(select=>select.addEventListener("change",()=>updateDeliveryStatus(select.dataset.deliveryStatus,select.value)));
   document.querySelector("[data-catalog-reset]")?.addEventListener("click", () => { state.catalogStatus="all"; state.catalogQuery=""; render(); });
   document.querySelectorAll("[data-action]").forEach(button => button.onclick = () => handleAction(button.dataset.action));
+  document.querySelectorAll("[data-panel-theme]").forEach(button=>button.addEventListener("click",()=>choosePanelTheme(button.dataset.panelTheme)));
   document.querySelectorAll("[data-edit-product]").forEach(button => button.onclick = () => productModal(state.catalog.find(item => item.id === button.dataset.editProduct)));
   document.querySelectorAll("[data-edit-customer]").forEach(button => button.onclick = () => customerModal(state.customers.find(item => item.id === button.dataset.editCustomer)));
   document.querySelector("#request-search")?.addEventListener("input", event => { state.query = event.target.value; const pos = event.target.selectionStart; render(); const input = document.querySelector("#request-search"); input?.focus(); input?.setSelectionRange(pos, pos); });
