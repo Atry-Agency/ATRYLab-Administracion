@@ -4,6 +4,7 @@ import { demoRequests, demoCatalog, statusMeta } from "./demo-data.js";
 import { generateQuotePdf } from "./quote-pdf.js";
 import { calculateCostEstimate, financeSyncKey, inventoryStatus, rollCostPerGram } from "./costing.js";
 import {featuredUpdates,isPublicProduct,moveFeatured,orderedFeatured} from "./featured.js";
+import {normalizeExperiences} from "./experiences.js";
 
 const asset = path => `${import.meta.env.BASE_URL || "/"}${path.replace(/^\//, "")}`;
 const logo = asset("recursos/atry-isotipo.png");
@@ -34,7 +35,7 @@ async function choosePanelTheme(value){
 
 const nav = [
   ["dashboard", "ph-squares-four", "Resumen"], ["requests", "ph-clipboard-text", "Solicitudes"],
-  ["production", "ph-printer", "Producción"], ["filaments", "ph-circles-three-plus", "Filamentos"], ["deliveries", "ph-truck", "Entregas"], ["catalog", "ph-cube", "Catálogo"], ["featured", "ph-star", "Destacados"],
+  ["production", "ph-printer", "Producción"], ["filaments", "ph-circles-three-plus", "Filamentos"], ["deliveries", "ph-truck", "Entregas"], ["catalog", "ph-cube", "Catálogo"], ["featured", "ph-star", "Destacados"], ["experiences", "ph-images", "Experiencias"],
   ["customers", "ph-users", "Clientes"], ["settings", "ph-sliders-horizontal", "Configuración"]
 ];
 const pageNames = Object.fromEntries(nav.map(([id,, label]) => [id, label]));
@@ -192,7 +193,7 @@ function shell(content){
 
 function render(){
   if(state.loading){ document.querySelector("#app").innerHTML = `<div class="loading"><img src="${logo}" alt="ATRY"><span></span><p>Preparando tu espacio de trabajo…</p></div>`; return; }
-  const views = {dashboard:dashboardView, requests:requestsView, production:productionView, filaments:filamentsView, deliveries:deliveriesView, catalog:catalogView, featured:featuredView, customers:customersView, settings:settingsView};
+  const views = {dashboard:dashboardView, requests:requestsView, production:productionView, filaments:filamentsView, deliveries:deliveriesView, catalog:catalogView, featured:featuredView, experiences:experiencesView, customers:customersView, settings:settingsView};
   document.querySelector("#app").innerHTML = shell((views[state.page] || dashboardView)()); bindGlobal();
 }
 
@@ -305,6 +306,50 @@ function featuredView(){
     ${items.length?`<div class="featured-list">${items.map((item,index)=>`<article class="featured-row"><span class="featured-position">${String(index+1).padStart(2,"0")}</span><div class="featured-row-thumb">${thumbnail(item)}</div><div class="featured-row-copy"><strong>${esc(item.name)}</strong><small>${esc(item.category)} · ${publicationState(item)==="upcoming"?"Próximamente":"Publicado"}${index>=8?" · fuera del inicio":""}</small></div><label class="featured-position-select">Posición<select data-featured-position="${esc(item.id)}" aria-label="Posición de ${esc(item.name)}">${items.map((_,position)=>`<option value="${position}" ${position===index?"selected":""}>${position+1}</option>`).join("")}</select></label><div class="featured-row-actions"><button data-featured-move="${esc(item.id)}" data-direction="up" aria-label="Subir ${esc(item.name)}" ${index===0?"disabled":""}><i class="ph ph-arrow-up"></i></button><button data-featured-move="${esc(item.id)}" data-direction="down" aria-label="Bajar ${esc(item.name)}" ${index===items.length-1?"disabled":""}><i class="ph ph-arrow-down"></i></button><button class="remove" data-featured-remove="${esc(item.id)}" aria-label="Quitar ${esc(item.name)} de destacados"><i class="ph ph-x"></i></button></div></article>`).join("")}</div>`:`<div class="featured-empty"><i class="ph ph-star"></i><strong>No hay destacados</strong><span>Agregá al menos un producto para guardar. La tienda no mostrará espacios vacíos.</span></div>`}
     <div class="featured-available"><div class="featured-section-title"><div><small>CATÁLOGO VISIBLE</small><h3>Agregar productos</h3></div></div><label class="featured-search"><i class="ph ph-magnifying-glass"></i><input id="featured-search" value="${esc(state.featuredQuery)}" placeholder="Buscar producto para destacar"></label>${available.length?`<div class="featured-available-list">${available.map(item=>`<article><div class="featured-row-thumb">${thumbnail(item)}</div><div><strong>${esc(item.name)}</strong><small>${esc(item.category)} · ${publicationState(item)==="upcoming"?"Próximamente":"Publicado"}</small></div><button data-featured-add="${esc(item.id)}"><i class="ph ph-plus"></i>Agregar</button></article>`).join("")}</div>`:`<p class="featured-available-empty">${state.featuredQuery?"No encontramos productos con esa búsqueda.":"Todos los productos visibles ya están en la selección."}</p>`}${drafts?`<p class="featured-draft-note"><i class="ph ph-lock-key"></i>${drafts} ${drafts===1?"borrador no aparece":"borradores no aparecen"} aquí; publicalos desde Catálogo para poder destacarlos.</p>`:""}</div></div>
     <aside class="featured-preview panel"><div class="featured-section-title"><div><small>VISTA PREVIA · INICIO</small><h3>Así se verá la selección</h3></div><i class="ph ph-eye"></i></div><p>El orden de estas tarjetas coincide con la sección “¿Qué podemos fabricar?” de la tienda. Los cambios se publican al guardar.</p><div class="featured-preview-grid">${items.slice(0,8).map((item,index)=>`<article><div class="featured-preview-image">${thumbnail(item)}<span>${String(index+1).padStart(2,"0")}</span></div><small>${esc(item.category)}</small><strong>${esc(item.name)}</strong></article>`).join("")||`<div class="featured-preview-empty">Agregá un producto para ver la vista previa.</div>`}</div>${items.length>8?`<p class="featured-overflow">${items.length-8} ${items.length-8===1?"producto queda":"productos quedan"} fuera de los primeros ocho lugares.</p>`:""}</aside></section>`;
+}
+
+const experiencesConfig=()=>normalizeExperiences(state.settings.home_experiences?.value);
+function experienceImageUrl(image){
+  if(!image)return "";
+  if(image.startsWith("storage:"))return catalogImageUrl(image.slice(8));
+  return /^recursos\/imagenes\/[a-z0-9/._-]+$/i.test(image)?`https://atrylab.com/${image}`:"";
+}
+function experiencesView(){
+  const config=experiencesConfig();
+  const cardPreview=(card,index)=>`<article class="experience-preview-card"><div class="experience-preview-photo">${experienceImageUrl(card.image)?`<img src="${esc(experienceImageUrl(card.image))}" alt="${esc(card.product)}">`:`<i class="ph ph-image-square"></i>`}</div><div><small>POSICIÓN ${String(index+1).padStart(2,"0")}${card.rating?` · ${esc(card.rating)} / 5`:""}</small><blockquote>“${esc(card.quote)}”</blockquote>${card.client?`<strong>${esc(card.client)}</strong>`:""}<span>${esc(card.product)}</span></div></article>`;
+  return `<section class="section-head featured-heading"><div><small class="eyebrow">CONTENIDO DE LA TIENDA</small><h2>Experiencias</h2><p>Administrá la sección “Ideas que ya tomaron forma” del inicio. Podés cambiar el texto, la foto y la posición de cada historia.</p></div><button class="primary" data-experience-new><i class="ph ph-plus"></i>Agregar historia</button></section>
+    <section class="experience-heading panel"><div><small>${esc(config.eyebrow)}</small><h3>${esc(config.title)}</h3><p>Este encabezado aparece encima de las tarjetas en la tienda.</p></div><button class="secondary" data-experience-heading><i class="ph ph-pencil-simple"></i>Editar textos</button></section>
+    <section class="experience-layout"><div class="experience-list"><div class="featured-section-title"><div><small>ORDEN Y CONTENIDO</small><h3>Historias publicadas</h3></div><span>${config.cards.length} ${config.cards.length===1?"historia":"historias"}</span></div>${config.cards.length?config.cards.map((card,index)=>`<article class="experience-editor-row"><span class="experience-order">${String(index+1).padStart(2,"0")}</span><div class="experience-editor-photo">${experienceImageUrl(card.image)?`<img src="${esc(experienceImageUrl(card.image))}" alt="">`:`<i class="ph ph-image-square"></i>`}</div><div class="experience-editor-copy"><strong>${esc(card.product)}</strong><small>${esc(card.client)} · ${esc(card.rating)} / 5</small><p>${esc(card.quote)}</p></div><label class="experience-position">Posición<select data-experience-position="${esc(card.id)}" aria-label="Posición de ${esc(card.product)}">${config.cards.map((_,position)=>`<option value="${position}" ${position===index?"selected":""}>${position+1}</option>`).join("")}</select></label><div class="experience-editor-actions"><button data-experience-up="${esc(card.id)}" aria-label="Subir ${esc(card.product)}" ${index===0?"disabled":""}><i class="ph ph-arrow-up"></i></button><button data-experience-down="${esc(card.id)}" aria-label="Bajar ${esc(card.product)}" ${index===config.cards.length-1?"disabled":""}><i class="ph ph-arrow-down"></i></button><button data-experience-edit="${esc(card.id)}" aria-label="Editar ${esc(card.product)}"><i class="ph ph-pencil-simple"></i></button><button class="remove" data-experience-delete="${esc(card.id)}" aria-label="Quitar ${esc(card.product)}"><i class="ph ph-trash"></i></button></div></article>`).join(""):`<div class="featured-empty"><i class="ph ph-images"></i><strong>No hay historias</strong><span>Agregá una para mostrar esta sección en el inicio.</span></div>`}</div>
+    <aside class="experience-preview panel"><div class="featured-section-title"><div><small>VISTA PREVIA · INICIO</small><h3>${esc(config.title)}</h3></div><i class="ph ph-eye"></i></div><p>Así se verán las historias, en este orden. Si no hay tarjetas, la tienda oculta la sección.</p><div class="experience-preview-list">${config.cards.map(cardPreview).join("")||`<div class="featured-preview-empty">Sin historias visibles.</div>`}</div></aside></section>`;
+}
+
+async function saveExperiences(config,message){
+  if(state.demo){state.settings.home_experiences={key:"home_experiences",value:config};render();toast(message);return;}
+  const {error:publicError}=await supabase.rpc("get_public_experiences");
+  if(publicError)throw new Error("La conexión pública de Experiencias aún no está activada en Supabase.");
+  const {error}=await supabase.from("app_settings").upsert({key:"home_experiences",value:config,updated_by:state.user?.id,updated_at:new Date().toISOString()});
+  if(error)throw error;
+  state.settings.home_experiences={key:"home_experiences",value:config};render();toast(message);
+}
+function editExperiencesHeading(){
+  const config=experiencesConfig();
+  openModal({title:"Textos de la sección",eyebrow:"EXPERIENCIAS",description:"Este título y la etiqueta se muestran en el inicio de la tienda.",content:`<div class="form-grid">${field("Etiqueta superior *","eyebrow",config.eyebrow,'required maxlength="80"')}${field("Título principal *","title",config.title,'required maxlength="120"')}</div>`,onSubmit:async data=>{config.eyebrow=String(data.get("eyebrow")||"").trim();config.title=String(data.get("title")||"").trim();if(!config.eyebrow||!config.title)throw new Error("Completá ambos textos.");await saveExperiences(config,"Textos actualizados");closeModal();}});
+}
+function editExperience(id=null){
+  const config=experiencesConfig(),card=config.cards.find(item=>item.id===id);
+  openModal({title:card?"Editar historia":"Agregar historia",eyebrow:"EXPERIENCIAS",description:"La tarjeta aparecerá en la tienda con la foto y el texto que guardes.",content:`<div class="form-grid experience-form">${textarea("Texto de la historia *","quote",card?.quote||"","Contá qué se hizo y cómo resultó")}${field("Cliente o referencia *","client",card?.client||"",'required maxlength="100"')}${field("Producto o proyecto *","product",card?.product||"",'required maxlength="100"')}${select("Valoración","rating",[["5","5 estrellas"],["4.5","4,5 estrellas"],["4","4 estrellas"],["3.5","3,5 estrellas"],["3","3 estrellas"]],String(card?.rating||5))}<label class="file-field compact"><input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/avif"><span class="upload-icon"><i class="ph ph-image-square"></i></span><span><strong>${card?.image?"Cambiar foto":"Subir foto"}</strong><small>JPG, PNG, WebP o AVIF · máximo 5 MB</small></span><i class="ph ph-upload-simple"></i></label>${card?.image?`<label class="check-field"><input type="checkbox" name="remove_image"><span>Quitar foto actual</span></label><div class="experience-current-photo"><img src="${esc(experienceImageUrl(card.image))}" alt="Foto actual"></div>`:""}</div>`,submitLabel:card?"Guardar historia":"Agregar historia",onSubmit:async data=>{
+    const quote=String(data.get("quote")||"").trim(),client=String(data.get("client")||"").trim(),product=String(data.get("product")||"").trim();
+    if(!quote||!client||!product)throw new Error("Completá el texto, el cliente y el producto.");
+    const file=data.get("image");let image=data.has("remove_image")?"":card?.image||"",uploadedPath="";
+    if(file instanceof File&&file.size){if(state.demo)throw new Error("Para subir fotos necesitás la conexión real a Supabase.");uploadedPath=await uploadCatalogImage(`experiencias/${card?.id||crypto.randomUUID()}`,file);image=`storage:${uploadedPath}`;}
+    const next={id:card?.id||crypto.randomUUID(),image,rating:Number(data.get("rating")),quote,client,product};
+    if(card)config.cards=config.cards.map(item=>item.id===card.id?next:item);else config.cards.push(next);
+    try{await saveExperiences(config,card?"Historia actualizada":"Historia agregada");closeModal();}catch(error){if(uploadedPath)await supabase.storage.from("catalog-images").remove([uploadedPath]);throw error;}
+  }});
+}
+function deleteExperience(id){
+  const config=experiencesConfig(),card=config.cards.find(item=>item.id===id);if(!card)return;
+  openModal({title:"¿Quitar esta historia?",eyebrow:"EXPERIENCIAS",description:"Dejará de aparecer en la tienda. Las demás conservarán su orden.",submitLabel:"Sí, quitar",content:`<div class="delete-warning"><i class="ph ph-trash"></i><div><strong>${esc(card.product)}</strong><p>${esc(card.client)}</p></div></div>`,onSubmit:async()=>{config.cards=config.cards.filter(item=>item.id!==id);await saveExperiences(config,"Historia quitada");closeModal();}});
 }
 
 function customerStats(customer){
@@ -911,6 +956,12 @@ function bindGlobal(){
   document.querySelector("[data-featured-discard]")?.addEventListener("click",()=>{state.featuredDraft=null;state.featuredDirty=false;render();});
   document.querySelector("[data-featured-save]")?.addEventListener("click",saveFeatured);
   document.querySelector("#featured-search")?.addEventListener("input",event=>{state.featuredQuery=event.target.value;const pos=event.target.selectionStart;render();const input=document.querySelector("#featured-search");input?.focus();input?.setSelectionRange(pos,pos);});
+  document.querySelector("[data-experience-new]")?.addEventListener("click",()=>editExperience());
+  document.querySelector("[data-experience-heading]")?.addEventListener("click",editExperiencesHeading);
+  document.querySelectorAll("[data-experience-edit]").forEach(button=>button.addEventListener("click",()=>editExperience(button.dataset.experienceEdit)));
+  document.querySelectorAll("[data-experience-delete]").forEach(button=>button.addEventListener("click",()=>deleteExperience(button.dataset.experienceDelete)));
+  document.querySelectorAll("[data-experience-position]").forEach(select=>select.addEventListener("change",async()=>{const config=experiencesConfig(),index=config.cards.findIndex(card=>card.id===select.dataset.experiencePosition),target=Number(select.value);if(index<0||!Number.isInteger(target)||target<0||target>=config.cards.length)return;const [card]=config.cards.splice(index,1);config.cards.splice(target,0,card);select.disabled=true;try{await saveExperiences(config,"Orden de historias actualizado");}catch(error){select.disabled=false;toast(error.message||"No se pudo cambiar el orden","error");}}));
+  for(const [selector,direction] of [["[data-experience-up]",-1],["[data-experience-down]",1]])document.querySelectorAll(selector).forEach(button=>button.addEventListener("click",async()=>{const config=experiencesConfig(),index=config.cards.findIndex(card=>card.id===button.dataset[direction<0?"experienceUp":"experienceDown"]);if(index<0||index+direction<0||index+direction>=config.cards.length)return;[config.cards[index],config.cards[index+direction]]=[config.cards[index+direction],config.cards[index]];button.disabled=true;try{await saveExperiences(config,"Orden de historias actualizado");}catch(error){button.disabled=false;toast(error.message||"No se pudo cambiar el orden","error");}}));
   document.querySelectorAll("[data-edit-product]").forEach(button => button.onclick = () => productModal(state.catalog.find(item => item.id === button.dataset.editProduct)));
   document.querySelectorAll("[data-edit-customer]").forEach(button => button.onclick = () => customerModal(state.customers.find(item => item.id === button.dataset.editCustomer)));
   document.querySelector("#request-search")?.addEventListener("input", event => { state.query = event.target.value; const pos = event.target.selectionStart; render(); const input = document.querySelector("#request-search"); input?.focus(); input?.setSelectionRange(pos, pos); });
