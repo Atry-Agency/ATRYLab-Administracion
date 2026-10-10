@@ -1,8 +1,8 @@
 export const siteThemePresets=[
-  {id:"original",name:"Original ATRY",description:"La web tal como está hoy.",icon:"ph-sparkle",colors:["#faf9f7","#181719","#00a5e2"]},
-  {id:"valentines",name:"San Valentín",description:"Cálido, delicado y romántico.",icon:"ph-heart",colors:["#fff9fb","#181719","#a6325e"]},
-  {id:"halloween",name:"Halloween",description:"Ámbar, creativo y elegante.",icon:"ph-moon-stars",colors:["#fcf9f4","#181719","#a34d16"]},
-  {id:"christmas",name:"Navidad",description:"Festivo, luminoso y sobrio.",icon:"ph-star",colors:["#f8fbf8","#181719","#246b54"]}
+  {id:"original",name:"Original ATRY",description:"Azul tecnológico de la web actual.",icon:"ph-sparkle",colors:["#081116","#f7fbfd","#28c9e7"]},
+  {id:"valentines",name:"San Valentín",description:"Borgoña, rosa suave y luz cálida.",icon:"ph-heart",colors:["#2a1722","#ffffff","#ffc2d4"]},
+  {id:"halloween",name:"Halloween",description:"Grafito, cobre y ámbar.",icon:"ph-moon-stars",colors:["#19171c","#ffffff","#ffcc87"]},
+  {id:"christmas",name:"Navidad",description:"Pino profundo, marfil y dorado.",icon:"ph-star",colors:["#102c27","#ffffff","#f4d997"]}
 ];
 
 const campaign=()=>({line_1:"",line_2:"",description:"",featured_ids:[]});
