@@ -3,6 +3,7 @@ import { supabase, isSupabaseConfigured } from "./supabase.js";
 import { demoRequests, demoCatalog, statusMeta } from "./demo-data.js";
 import { generateQuotePdf } from "./quote-pdf.js";
 import { calculateCostEstimate, financeSyncKey, inventoryStatus, rollCostPerGram } from "./costing.js";
+import {featuredUpdates,isPublicProduct,moveFeatured,orderedFeatured} from "./featured.js";
 
 const asset = path => `${import.meta.env.BASE_URL || "/"}${path.replace(/^\//, "")}`;
 const logo = asset("recursos/atry-isotipo.png");
@@ -10,7 +11,7 @@ const state = {
   page: "dashboard", requests: [], catalog: [], customers: [], jobs: [], attachments: [], quotes: [], quoteItems: [], settings: {}, profiles: [],
   filamentRolls: [], filamentMovements: [], filamentReservations: [], costEstimates: [], costLines: [], financeSync: [], filamentQuery:"", filamentStatus:"all",
   selected: null, query: "", status: "all", catalogQuery: "", catalogStatus: "all", catalogSelection: new Set(), catalogSelecting: false, analyticsPeriod: "month", loading: true, demo: !isSupabaseConfigured,
-  user: null, sidebarOpen: false, theme: "original"
+  user: null, sidebarOpen: false, theme: "original", featuredDraft:null, featuredDirty:false, featuredQuery:"", featuredSaving:false
 };
 let realtimeChannel=null,realtimeTimer=null,realtimePending=false,dataLoading=false;
 const panelThemes=[
@@ -33,7 +34,7 @@ async function choosePanelTheme(value){
 
 const nav = [
   ["dashboard", "ph-squares-four", "Resumen"], ["requests", "ph-clipboard-text", "Solicitudes"],
-  ["production", "ph-printer", "Producción"], ["filaments", "ph-circles-three-plus", "Filamentos"], ["deliveries", "ph-truck", "Entregas"], ["catalog", "ph-cube", "Catálogo"],
+  ["production", "ph-printer", "Producción"], ["filaments", "ph-circles-three-plus", "Filamentos"], ["deliveries", "ph-truck", "Entregas"], ["catalog", "ph-cube", "Catálogo"], ["featured", "ph-star", "Destacados"],
   ["customers", "ph-users", "Clientes"], ["settings", "ph-sliders-horizontal", "Configuración"]
 ];
 const pageNames = Object.fromEntries(nav.map(([id,, label]) => [id, label]));
@@ -138,6 +139,7 @@ async function loadData({quiet=false}={}){
   const failure = [requests, catalog, customers, jobs, attachments, settings, profiles, filamentRolls, filamentMovements, filamentReservations, costEstimates, costLines, financeSync].find(result => result.error);
   if(failure){state.loading=false;dataLoading=false;render();toast(`No se pudieron cargar los datos: ${failure.error.message}`, "error");return;}
   state.requests = (requests.data || []).map(request=>request.status==="quoted"?{...request,status:"reviewing"}:request); state.catalog = catalog.data || []; state.customers = customers.data || [];
+  if(!state.featuredDirty)state.featuredDraft=null;
   state.jobs = jobs.data || []; state.attachments = attachments.data || []; state.settings = Object.fromEntries((settings.data || []).map(row => [row.key, row]));
   state.quotes = quotes.error ? [] : (quotes.data || []); state.quoteItems = quoteItems.error ? [] : (quoteItems.data || []);
   state.filamentRolls=filamentRolls.data||[];state.filamentMovements=filamentMovements.data||[];state.filamentReservations=filamentReservations.data||[];
@@ -190,7 +192,7 @@ function shell(content){
 
 function render(){
   if(state.loading){ document.querySelector("#app").innerHTML = `<div class="loading"><img src="${logo}" alt="ATRY"><span></span><p>Preparando tu espacio de trabajo…</p></div>`; return; }
-  const views = {dashboard:dashboardView, requests:requestsView, production:productionView, filaments:filamentsView, deliveries:deliveriesView, catalog:catalogView, customers:customersView, settings:settingsView};
+  const views = {dashboard:dashboardView, requests:requestsView, production:productionView, filaments:filamentsView, deliveries:deliveriesView, catalog:catalogView, featured:featuredView, customers:customersView, settings:settingsView};
   document.querySelector("#app").innerHTML = shell((views[state.page] || dashboardView)()); bindGlobal();
 }
 
@@ -275,7 +277,7 @@ function catalogView(){
   const counts = Object.fromEntries(Object.keys(publicationMeta).map(status => [status, state.catalog.filter(item => publicationState(item) === status).length]));
   const term = state.catalogQuery.trim().toLowerCase();
   const filtered = state.catalog.filter(item => (state.catalogStatus === "all" || publicationState(item) === state.catalogStatus) && `${item.name} ${item.category} ${item.badge || ""} ${item.description || ""}`.toLowerCase().includes(term));
-  return `<section class="section-head"><div><h2>Catálogo</h2><p>Decidí qué está listo, qué querés anticipar y qué todavía queda guardado.</p></div><div class="section-actions"><button class="secondary ${state.catalogSelecting?"active":""}" data-catalog-select-mode><i class="ph ph-check-square"></i>${state.catalogSelecting?"Cancelar selección":"Seleccionar"}</button><button class="primary" data-action="new-product"><i class="ph ph-plus"></i>Nuevo producto</button></div></section>
+  return `<section class="section-head"><div><h2>Catálogo</h2><p>Decidí qué está listo, qué querés anticipar y qué todavía queda guardado.</p></div><div class="section-actions"><button class="secondary" data-page="featured"><i class="ph ph-star"></i>Destacados</button><button class="secondary ${state.catalogSelecting?"active":""}" data-catalog-select-mode><i class="ph ph-check-square"></i>${state.catalogSelecting?"Cancelar selección":"Seleccionar"}</button><button class="primary" data-action="new-product"><i class="ph ph-plus"></i>Nuevo producto</button></div></section>
   <section class="catalog-summary"><button data-catalog-status="all" class="all ${state.catalogStatus === "all" ? "active" : ""}"><i class="ph ph-squares-four"></i><span><strong>${state.catalog.length}</strong><small>Todos</small></span></button>${Object.entries(publicationMeta).map(([id,meta]) => `<button data-catalog-status="${id}" class="${meta.tone} ${state.catalogStatus === id ? "active" : ""}"><i class="ph ${meta.icon}"></i><span><strong>${counts[id]}</strong><small>${meta.label}</small></span></button>`).join("")}</section>
   <section class="catalog-search"><label><i class="ph ph-magnifying-glass"></i><input id="catalog-search" value="${esc(state.catalogQuery)}" placeholder="Buscar por nombre, categoría o etiqueta"></label>${state.catalogQuery || state.catalogStatus !== "all" ? `<button data-catalog-reset><i class="ph ph-x"></i> Limpiar</button>` : ""}<span>${filtered.length} ${filtered.length === 1 ? "producto" : "productos"}</span></section>
   ${state.catalogSelecting?`<section class="catalog-bulk"><button data-catalog-select-all><i class="ph ph-checks"></i>${filtered.every(item=>state.catalogSelection.has(item.id))&&filtered.length?"Quitar visibles":"Seleccionar visibles"}</button><span><b>${state.catalogSelection.size}</b> seleccionados</span><label>Cambiar a <select id="catalog-bulk-status"><option value="published">Publicado</option><option value="upcoming">Próximamente</option><option value="draft">Borrador</option></select></label><button class="primary" data-catalog-apply ${state.catalogSelection.size?"":"disabled"}>Aplicar cambio</button></section>`:""}
@@ -285,6 +287,24 @@ function catalogView(){
     <span class="publication ${meta.tone}"><i class="ph ${meta.icon}"></i>${meta.label}</span>
     <button class="icon-btn" data-edit-product="${esc(item.id)}" title="Editar producto"><i class="ph ph-pencil-simple"></i></button>
   </article>`; }).join("") : emptyState("ph-magnifying-glass", "No encontramos productos", "Probá con otra búsqueda o limpiá los filtros.")}</section>`;
+}
+
+function featuredIds(){
+  if(!state.featuredDraft)state.featuredDraft=orderedFeatured(state.catalog).map(item=>item.id);
+  return state.featuredDraft;
+}
+
+function featuredView(){
+  const ids=featuredIds(),items=ids.map(id=>state.catalog.find(item=>item.id===id)).filter(Boolean);
+  const available=state.catalog.filter(item=>isPublicProduct(item)&&!ids.includes(item.id)&&`${item.name} ${item.category}`.toLowerCase().includes(state.featuredQuery.trim().toLowerCase()));
+  const drafts=state.catalog.filter(item=>!isPublicProduct(item)).length;
+  const thumbnail=item=>{const url=catalogImageUrl(item.image_path);return url?`<img src="${esc(url)}" alt="" style="${imageFrameStyle(item)}">`:`<span class="featured-no-image"><i class="ph ph-image-square"></i>Sin foto</span>`;};
+  return `<section class="section-head featured-heading"><div><small class="eyebrow">CURADURÍA DE LA TIENDA</small><h2>Destacados</h2><p>Elegí qué productos aparecen primero en el inicio de ATRY Lab, sin cambiar el orden del catálogo completo.</p></div><button class="secondary" data-page="catalog"><i class="ph ph-cube"></i>Ir al catálogo</button></section>
+    <section class="featured-toolbar panel"><div><i class="ph ph-info"></i><span>La tienda muestra <strong>hasta 8 productos</strong> en el inicio. Las posiciones adicionales quedan en espera. Solo se pueden destacar productos publicados o próximos.${state.featuredDirty?` <b class="featured-unsaved">Cambios sin guardar.</b>`:""}</span></div><div class="featured-toolbar-actions"><button class="secondary" data-featured-discard ${state.featuredDirty&&!state.featuredSaving?"":"disabled"}>Descartar</button><button class="primary" data-featured-save ${state.featuredDirty&&ids.length&&!state.featuredSaving?"":"disabled"}><i class="ph ph-floppy-disk"></i>${state.featuredSaving?"Guardando…":"Guardar orden"}</button></div></section>
+    <section class="featured-workspace"><div class="featured-editor"><div class="featured-section-title"><div><small>SELECCIÓN ACTUAL</small><h3>Orden de aparición</h3></div><span>${items.length} ${items.length===1?"artículo":"artículos"}</span></div>
+    ${items.length?`<div class="featured-list">${items.map((item,index)=>`<article class="featured-row"><span class="featured-position">${String(index+1).padStart(2,"0")}</span><div class="featured-row-thumb">${thumbnail(item)}</div><div class="featured-row-copy"><strong>${esc(item.name)}</strong><small>${esc(item.category)} · ${publicationState(item)==="upcoming"?"Próximamente":"Publicado"}${index>=8?" · fuera del inicio":""}</small></div><label class="featured-position-select">Posición<select data-featured-position="${esc(item.id)}" aria-label="Posición de ${esc(item.name)}">${items.map((_,position)=>`<option value="${position}" ${position===index?"selected":""}>${position+1}</option>`).join("")}</select></label><div class="featured-row-actions"><button data-featured-move="${esc(item.id)}" data-direction="up" aria-label="Subir ${esc(item.name)}" ${index===0?"disabled":""}><i class="ph ph-arrow-up"></i></button><button data-featured-move="${esc(item.id)}" data-direction="down" aria-label="Bajar ${esc(item.name)}" ${index===items.length-1?"disabled":""}><i class="ph ph-arrow-down"></i></button><button class="remove" data-featured-remove="${esc(item.id)}" aria-label="Quitar ${esc(item.name)} de destacados"><i class="ph ph-x"></i></button></div></article>`).join("")}</div>`:`<div class="featured-empty"><i class="ph ph-star"></i><strong>No hay destacados</strong><span>Agregá al menos un producto para guardar. La tienda no mostrará espacios vacíos.</span></div>`}
+    <div class="featured-available"><div class="featured-section-title"><div><small>CATÁLOGO VISIBLE</small><h3>Agregar productos</h3></div></div><label class="featured-search"><i class="ph ph-magnifying-glass"></i><input id="featured-search" value="${esc(state.featuredQuery)}" placeholder="Buscar producto para destacar"></label>${available.length?`<div class="featured-available-list">${available.map(item=>`<article><div class="featured-row-thumb">${thumbnail(item)}</div><div><strong>${esc(item.name)}</strong><small>${esc(item.category)} · ${publicationState(item)==="upcoming"?"Próximamente":"Publicado"}</small></div><button data-featured-add="${esc(item.id)}"><i class="ph ph-plus"></i>Agregar</button></article>`).join("")}</div>`:`<p class="featured-available-empty">${state.featuredQuery?"No encontramos productos con esa búsqueda.":"Todos los productos visibles ya están en la selección."}</p>`}${drafts?`<p class="featured-draft-note"><i class="ph ph-lock-key"></i>${drafts} ${drafts===1?"borrador no aparece":"borradores no aparecen"} aquí; publicalos desde Catálogo para poder destacarlos.</p>`:""}</div></div>
+    <aside class="featured-preview panel"><div class="featured-section-title"><div><small>VISTA PREVIA · INICIO</small><h3>Así se verá la selección</h3></div><i class="ph ph-eye"></i></div><p>El orden de estas tarjetas coincide con la sección “¿Qué podemos fabricar?” de la tienda. Los cambios se publican al guardar.</p><div class="featured-preview-grid">${items.slice(0,8).map((item,index)=>`<article><div class="featured-preview-image">${thumbnail(item)}<span>${String(index+1).padStart(2,"0")}</span></div><small>${esc(item.category)}</small><strong>${esc(item.name)}</strong></article>`).join("")||`<div class="featured-preview-empty">Agregá un producto para ver la vista previa.</div>`}</div>${items.length>8?`<p class="featured-overflow">${items.length-8} ${items.length-8===1?"producto queda":"productos quedan"} fuera de los primeros ocho lugares.</p>`:""}</aside></section>`;
 }
 
 function customerStats(customer){
@@ -847,6 +867,24 @@ async function applyBulkCatalogStatus(){
   if(error){toast("No se pudieron actualizar los productos","error");return;} state.catalogSelection.clear();state.catalogSelecting=false;await loadData();toast(`${ids.length} productos actualizados`);
 }
 
+function changeFeatured(next){state.featuredDraft=next;state.featuredDirty=true;render();}
+async function saveFeatured(){
+  if(state.featuredSaving||!state.featuredDirty)return;
+  const ids=[...featuredIds()];if(!ids.length){toast("Elegí al menos un producto destacado.","error");return;}
+  state.featuredSaving=true;render();
+  try{
+    if(state.demo){const positions=new Map(ids.map((id,index)=>[id,(index+1)*10]));state.catalog.forEach(item=>{if(!isPublicProduct(item))return;item.featured=positions.has(item.id);item.settings={...(item.settings||{})};if(item.featured)item.settings.featured_order=positions.get(item.id);else delete item.settings.featured_order;});}
+    else{
+      const {data,error}=await supabase.from("catalog_items").select("id,name,active,publication_status,featured,sort_order,settings");if(error)throw error;
+      const updates=featuredUpdates(data||[],ids);
+      for(const item of updates){const {error:updateError}=await supabase.from("catalog_items").update({featured:item.featured,settings:item.settings,updated_at:new Date().toISOString()}).eq("id",item.id);if(updateError)throw updateError;}
+    }
+    state.featuredDirty=false;state.featuredDraft=null;state.featuredSaving=false;
+    if(state.demo)render();else await loadData({quiet:true});
+    toast("Destacados guardados. La tienda actualizará el orden en unos segundos.");
+  }catch(error){state.featuredSaving=false;render();toast(`No se pudo guardar: ${error.message||"intentá de nuevo"}`,"error");}
+}
+
 function bindGlobal(){
   document.querySelectorAll("[data-page]").forEach(button => button.onclick = () => { state.page = button.dataset.page; state.sidebarOpen = false; render(); });
   document.querySelectorAll("[data-request]").forEach(button => button.onclick = () => detailDrawer(button.dataset.request));
@@ -866,6 +904,13 @@ function bindGlobal(){
   document.querySelector("[data-catalog-reset]")?.addEventListener("click", () => { state.catalogStatus="all"; state.catalogQuery=""; render(); });
   document.querySelectorAll("[data-action]").forEach(button => button.onclick = () => handleAction(button.dataset.action));
   document.querySelectorAll("[data-panel-theme]").forEach(button=>button.addEventListener("click",()=>choosePanelTheme(button.dataset.panelTheme)));
+  document.querySelectorAll("[data-featured-add]").forEach(button=>button.addEventListener("click",()=>{const id=button.dataset.featuredAdd;if(!state.catalog.some(item=>item.id===id&&isPublicProduct(item)))return;changeFeatured([...featuredIds(),id]);}));
+  document.querySelectorAll("[data-featured-remove]").forEach(button=>button.addEventListener("click",()=>changeFeatured(featuredIds().filter(id=>id!==button.dataset.featuredRemove))));
+  document.querySelectorAll("[data-featured-move]").forEach(button=>button.addEventListener("click",()=>{const ids=featuredIds(),id=button.dataset.featuredMove,index=ids.indexOf(id);changeFeatured(moveFeatured(ids,id,index+(button.dataset.direction==="up"?-1:1)));}));
+  document.querySelectorAll("[data-featured-position]").forEach(select=>select.addEventListener("change",()=>changeFeatured(moveFeatured(featuredIds(),select.dataset.featuredPosition,Number(select.value)))));
+  document.querySelector("[data-featured-discard]")?.addEventListener("click",()=>{state.featuredDraft=null;state.featuredDirty=false;render();});
+  document.querySelector("[data-featured-save]")?.addEventListener("click",saveFeatured);
+  document.querySelector("#featured-search")?.addEventListener("input",event=>{state.featuredQuery=event.target.value;const pos=event.target.selectionStart;render();const input=document.querySelector("#featured-search");input?.focus();input?.setSelectionRange(pos,pos);});
   document.querySelectorAll("[data-edit-product]").forEach(button => button.onclick = () => productModal(state.catalog.find(item => item.id === button.dataset.editProduct)));
   document.querySelectorAll("[data-edit-customer]").forEach(button => button.onclick = () => customerModal(state.customers.find(item => item.id === button.dataset.editCustomer)));
   document.querySelector("#request-search")?.addEventListener("input", event => { state.query = event.target.value; const pos = event.target.selectionStart; render(); const input = document.querySelector("#request-search"); input?.focus(); input?.setSelectionRange(pos, pos); });
@@ -881,6 +926,7 @@ function handleAction(action){
 }
 function focusSearch(){ state.page = "requests"; render(); setTimeout(() => document.querySelector("#request-search")?.focus(), 0); }
 document.addEventListener("keydown", event => { if(event.key === "Escape"){ if(document.querySelector("#modal-root")?.innerHTML) closeModal(); else closeDrawer(); } if((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k"){ event.preventDefault(); focusSearch();return;}const typing=/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName),modal=Boolean(document.querySelector("#modal-root")?.innerHTML);if(typing||modal||event.ctrlKey||event.metaKey||event.altKey)return;const key=event.key.toLowerCase();if(key==="/"){event.preventDefault();focusSearch();}else if(key==="n")requestModal();else if(key==="f"){state.page="filaments";render();}else if(key==="a")rollModal();else if(key==="m")movementModal();else if(key==="c"&&state.selected){const request=state.requests.find(item=>item.id===state.selected);if(request){closeDrawer();costCalculatorModal(request);}}else if(key==="q"&&state.selected){const request=state.requests.find(item=>item.id===state.selected);if(request){closeDrawer();quoteEditor(request,quoteForRequest(request.id).find(q=>q.status!=="replaced"));}} });
+window.addEventListener("beforeunload",event=>{if(state.featuredDirty){event.preventDefault();event.returnValue="";}});
 function toast(message, type="ok"){ const root = document.querySelector("#toast-root") || document.body; const item = document.createElement("div"); item.className = `toast ${type}`; item.setAttribute("role",type==="error"?"alert":"status"); item.innerHTML = `<i class="ph ${type === "error" ? "ph-warning-circle" : "ph-check-circle"}"></i><span>${esc(message)}</span>`; root.append(item); setTimeout(() => item.remove(), type==="error"?7000:3200); }
 
 bootstrap();
