@@ -1,0 +1,10 @@
+{
+  "icons": [
+    {
+      "src": "./recursos/home-icons/icon-512-v1.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
